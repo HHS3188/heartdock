@@ -1,86 +1,123 @@
 # HeartDock
 
-HeartDock is a customizable desktop heart rate overlay for Windows.
+HeartDock 是一个面向 Windows 的可自定义桌面心率悬浮窗工具。
 
-The current version is a **v0.1 starter project**. It uses a mock heart rate source first, so the desktop overlay, settings, GitHub workflow, and project structure can be built before dealing with Bluetooth and Mi Band authentication.
+当前版本是一个 **v0.1.1 起步项目**。它暂时使用模拟心率数据源，优先完成桌面悬浮窗、基础设置、GitHub 工作流和项目结构，后续再逐步处理蓝牙心率设备和小米手环认证等更复杂的功能。
 
-## Features
+## 功能特性
 
-- Transparent desktop heart rate overlay
-- Always-on-top window
-- Mock heart rate data source
-- Custom font size
-- Custom refresh interval
-- BPM-based color rules
-- Background opacity control
-- Optional click-through mode
-- Local config persistence
-- GitHub-ready project structure
+- 桌面心率悬浮窗
+- 窗口始终置顶
+- 模拟心率数据源
+- 自定义字体大小
+- 自定义刷新间隔
+- 根据 BPM 心率区间改变颜色
+- 背景透明度控制
+- 可选点击穿透模式
+- 本地配置持久化
+- 适合 GitHub 项目管理的基础结构
 
-## Current status
+## 当前状态
 
-This project is currently in early development.
+本项目目前处于早期开发阶段。
 
-| Version | Status | Description |
+| 版本 | 状态 | 说明 |
 |---|---|---|
-| v0.1.0 | In progress | Mock heart rate overlay and basic style settings |
-| v0.2.0 | Planned | Standard BLE heart rate device support |
-| v0.3.0 | Planned | Mi Band research and experimental adapter |
-| v0.4.0 | Planned | Target-window follow mode |
-| v1.0.0 | Planned | Stable Windows release |
+| v0.1.1 | 进行中 | 模拟心率悬浮窗和基础样式设置 |
+| v0.2.0 | 计划中 | 标准 BLE 蓝牙心率设备支持 |
+| v0.3.0 | 计划中 | 小米手环研究和实验性适配 |
+| v0.4.0 | 计划中 | 目标窗口跟随模式 |
+| v1.0.0 | 计划中 | 稳定 Windows 发布版本 |
 
-## Development
+## 推荐运行环境
 
-Install dependencies:
+建议使用以下环境运行和开发本项目：
+
+- Windows 10 / Windows 11
+- Node.js 22 LTS
+- npm 10+
+- Git
+
+本项目当前已经作为一个 Electron + React 起步项目在 Windows 环境下运行成功。当前版本使用模拟心率数据，不依赖真实小米手环或蓝牙心率设备。
+
+## 本地运行说明
+
+安装依赖：
 
 ```bash
 npm install
 ```
 
-Start the development app:
+启动开发模式：
 
 ```bash
 npm run dev
 ```
 
-Run TypeScript check:
+运行 TypeScript 类型检查：
 
 ```bash
 npm run typecheck
 ```
 
-Build the app:
+构建项目：
 
 ```bash
 npm run build
 ```
 
-Create a Windows installer:
+创建 Windows 安装包：
 
 ```bash
 npm run dist
 ```
 
-## Hotkeys
+## 快捷键
 
-| Hotkey | Action |
+| 快捷键 | 功能 |
 |---|---|
-| Ctrl + Shift + H | Toggle click-through mode |
+| Ctrl + Shift + H | 开启 / 关闭点击穿透模式 |
 
-If click-through mode is enabled, mouse clicks will pass through the overlay. Use `Ctrl + Shift + H` to disable it again.
+如果开启了点击穿透模式，鼠标点击会穿过悬浮窗，无法直接点击悬浮窗界面。可以使用 `Ctrl + Shift + H` 关闭点击穿透模式。
 
-## Overlay limitations
+## 当前限制
 
-HeartDock currently focuses on desktop, normal windows, and borderless fullscreen scenarios. Exclusive fullscreen support is experimental and not guaranteed.
+HeartDock 当前优先支持以下场景：
 
-See [docs/overlay-limitations.md](docs/overlay-limitations.md).
+- 桌面悬浮显示
+- 普通窗口上方显示
+- 无边框全屏窗口场景
 
-## Mi Band support
+独占全屏程序上方显示属于实验性方向，当前不保证所有软件都能正常覆盖。
 
-Mi Band support is planned, but it is not included in v0.1. The first public version uses mock data so that the project structure and desktop overlay can be completed first.
+更多说明见：
 
-See [docs/mi-band-notes.md](docs/mi-band-notes.md).
+[docs/overlay-limitations.md](docs/overlay-limitations.md)
 
-## License
+## 小米手环支持
+
+小米手环支持已经列入计划，但当前版本暂未包含。
+
+v0.1.1 版本使用模拟心率数据，目的是先完成项目结构、桌面悬浮窗和 GitHub 工作流。后续版本会继续研究小米手环的认证流程、支持型号和实时心率读取方式。
+
+更多说明见：
+
+[docs/mi-band-notes.md](docs/mi-band-notes.md)
+
+## 开发路线
+
+当前计划如下：
+
+1. 完成 v0.1.x 起步项目和 GitHub 工作流
+2. 增加标准 BLE 心率设备支持
+3. 研究小米手环认证和数据读取
+4. 增加目标窗口跟随模式
+5. 打包稳定 Windows 安装版本
+
+详细路线见：
+
+[docs/roadmap.md](docs/roadmap.md)
+
+## 许可证
 
 MIT
