@@ -1,0 +1,45 @@
+{
+  "name": "heartdock",
+  "version": "0.1.1",
+  "description": "A customizable desktop heart rate overlay for Windows.",
+  "author": "Your Name",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && electron-vite build",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "5.0.4",
+    "electron": "39.2.7",
+    "electron-builder": "26.0.12",
+    "electron-vite": "5.0.0",
+    "typescript": "5.8.3",
+    "vite": "7.3.2"
+  },
+  "build": {
+    "appId": "dev.heartdock.app",
+    "productName": "HeartDock",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
