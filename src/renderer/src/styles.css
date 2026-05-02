@@ -21,7 +21,8 @@ body,
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -132,6 +133,15 @@ button {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.settings-panel select {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: white;
+  background: rgba(15, 23, 42, 0.92);
+}
+
 .checkbox-row {
   grid-template-columns: 18px 1fr !important;
 }
@@ -151,4 +161,19 @@ button {
   50% {
     transform: scale(1.16);
   }
+}
+
+.window-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.close-button {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.close-button:hover {
+  background: rgba(248, 113, 113, 0.25);
 }

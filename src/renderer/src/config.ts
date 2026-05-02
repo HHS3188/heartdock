@@ -130,3 +130,10 @@ export function loadConfig(): HeartDockConfig {
 export function saveConfig(config: HeartDockConfig): void {
   localStorage.setItem(CONFIG_KEY, JSON.stringify(config, null, 2))
 }
+
+export function createDefaultConfig(): HeartDockConfig {
+  return {
+    ...defaultConfig,
+    colorRules: [...defaultConfig.colorRules]
+  }
+}
