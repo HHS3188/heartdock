@@ -262,6 +262,15 @@ select {
   box-shadow: none;
 }
 
+.danger-button {
+  color: #fecaca;
+}
+
+.danger-button:hover {
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(248, 113, 113, 0.16);
+}
+
 .reset-button {
   margin-top: 4px;
 }

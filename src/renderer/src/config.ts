@@ -125,6 +125,16 @@ export function normalizeBpm(value: number): number {
   return Math.min(Math.max(Math.round(value), 30), 240)
 }
 
+export function normalizeRefreshIntervalMs(value: number): number {
+  if (!Number.isFinite(value)) {
+    return defaultConfig.refreshIntervalMs
+  }
+
+  const roundedValue = Math.round(value / 250) * 250
+
+  return Math.min(Math.max(roundedValue, 250), 10000)
+}
+
 export function loadConfig(): HeartDockConfig {
   const raw = localStorage.getItem(CONFIG_KEY)
 
@@ -138,7 +148,10 @@ export function loadConfig(): HeartDockConfig {
     return {
       ...createDefaultConfig(),
       ...parsed,
-      manualBpm: normalizeBpm(parsed.manualBpm ?? defaultConfig.manualBpm)
+      manualBpm: normalizeBpm(parsed.manualBpm ?? defaultConfig.manualBpm),
+      refreshIntervalMs: normalizeRefreshIntervalMs(
+        parsed.refreshIntervalMs ?? defaultConfig.refreshIntervalMs
+      )
     }
   } catch {
     return createDefaultConfig()
@@ -152,6 +165,8 @@ export function saveConfig(config: HeartDockConfig): void {
 export function createDefaultConfig(): HeartDockConfig {
   return {
     ...defaultConfig,
+    refreshIntervalMs: normalizeRefreshIntervalMs(defaultConfig.refreshIntervalMs),
+    manualBpm: normalizeBpm(defaultConfig.manualBpm),
     colorRules: [...defaultConfig.colorRules]
   }
 }
