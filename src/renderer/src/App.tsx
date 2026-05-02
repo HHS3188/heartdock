@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent
+} from 'react'
+
 import {
   HeartDockConfig,
   HeartRateSourceMode,
@@ -115,7 +124,14 @@ function App() {
   const initialConfigRef = useRef<HeartDockConfig | null>(null)
 
   if (initialConfigRef.current === null) {
-    initialConfigRef.current = loadConfig()
+    const loadedConfig = loadConfig()
+
+    initialConfigRef.current = {
+      ...loadedConfig,
+      showSettings: true,
+      pureDisplay: false,
+      clickThrough: false
+    }
   }
 
   const sourceRef = useRef(new MockHeartRateSource())
@@ -123,6 +139,16 @@ function App() {
   const bleDeviceRef = useRef<BleDevice | null>(null)
   const bleCharacteristicRef = useRef<BleCharacteristic | null>(null)
   const pureHeartRef = useRef<HTMLDivElement | null>(null)
+  const normalWindowBoundsRef = useRef<HeartDockWindowBounds | null>(null)
+  const pureDragStateRef = useRef({
+    isDragging: false,
+    lastScreenX: 0,
+    lastScreenY: 0,
+    totalDeltaX: 0,
+    totalDeltaY: 0
+  })
+
+  const pureDragMovedRef = useRef(false)
 
   const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
@@ -135,8 +161,8 @@ function App() {
   const [bleStatus, setBleStatus] = useState<BleConnectionStatus>('idle')
   const [bleDeviceName, setBleDeviceName] = useState('')
   const [bleMessage, setBleMessage] = useState(
-  '尚未连接 BLE 心率设备。请先开启 Windows 蓝牙，并确保心率设备正在广播标准心率服务。连接前心率将显示为 -- bpm。'
-)
+    '尚未连接 BLE 心率设备。请先开启 Windows 蓝牙，并确保心率设备正在广播标准心率服务。连接前心率将显示为 -- bpm。'
+  )
 
   const shouldShowBlePlaceholder =
     config.heartRateSourceMode === 'ble' && bleStatus !== 'connected'
@@ -259,12 +285,99 @@ function App() {
     setConfig((current) => applyThemePreset(current, themeId))
   }
 
-  const handleTogglePureDisplay = (): void => {
+  const handleTogglePureDisplay = async (): Promise<void> => {
+    if (!config.pureDisplay) {
+      normalWindowBoundsRef.current = await window.heartdock.getWindowBounds()
+
+      setConfig((current) => ({
+        ...current,
+        pureDisplay: true,
+        showSettings: false
+      }))
+
+      return
+    }
+
+    const normalWindowBounds = normalWindowBoundsRef.current
+
     setConfig((current) => ({
       ...current,
-      pureDisplay: !current.pureDisplay,
-      showSettings: current.pureDisplay ? true : false
+      pureDisplay: false,
+      showSettings: true
     }))
+
+    if (normalWindowBounds) {
+      window.setTimeout(() => {
+        void window.heartdock.setWindowBounds(normalWindowBounds)
+      }, 0)
+    }
+  }
+
+
+  const handlePureDisplayDoubleClick = (): void => {
+    if (pureDragMovedRef.current) {
+      return
+    }
+
+    void handleTogglePureDisplay()
+  }
+
+  const handlePureDisplayMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+
+    pureDragStateRef.current = {
+      isDragging: true,
+      lastScreenX: event.screenX,
+      lastScreenY: event.screenY,
+      totalDeltaX: 0,
+      totalDeltaY: 0
+    }
+
+    window.heartdock.setClickThrough(false)
+
+    const handleMouseMove = (moveEvent: MouseEvent): void => {
+      const dragState = pureDragStateRef.current
+
+      if (!dragState.isDragging) {
+        return
+      }
+
+      const deltaX = moveEvent.screenX - dragState.lastScreenX
+      const deltaY = moveEvent.screenY - dragState.lastScreenY
+
+      if (deltaX === 0 && deltaY === 0) {
+        return
+      }
+
+      dragState.lastScreenX = moveEvent.screenX
+      dragState.lastScreenY = moveEvent.screenY
+      dragState.totalDeltaX += Math.abs(deltaX)
+      dragState.totalDeltaY += Math.abs(deltaY)
+
+      if (dragState.totalDeltaX + dragState.totalDeltaY > 4) {
+        pureDragMovedRef.current = true
+      }
+
+      void window.heartdock.moveWindowBy(deltaX, deltaY)
+    }
+
+    const handleMouseUp = (): void => {
+      pureDragStateRef.current.isDragging = false
+
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+
+      window.setTimeout(() => {
+        pureDragMovedRef.current = false
+      }, 180)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
   }
 
   const getBleStatusText = (): string => {
@@ -408,19 +521,19 @@ function App() {
         return
       }
 
-if (error instanceof Error && error.message.includes('User cancelled')) {
-  setBleStatus('idle')
-  setBleMessage('未选择 BLE 心率设备。请确认 Windows 蓝牙已开启，设备正在广播心率服务，然后重新点击连接。')
-  return
-}
+      if (error instanceof Error && error.message.includes('User cancelled')) {
+        setBleStatus('idle')
+        setBleMessage('未选择 BLE 心率设备。请确认 Windows 蓝牙已开启，设备正在广播心率服务，然后重新点击连接。')
+        return
+      }
 
-setBleStatus('failed')
+      setBleStatus('failed')
 
-if (error instanceof Error) {
-  setBleMessage(`BLE 连接失败：${error.message}。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。`)
-} else {
-  setBleMessage('BLE 连接失败：未知错误。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。')
-}
+      if (error instanceof Error) {
+        setBleMessage(`BLE 连接失败：${error.message}。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。`)
+      } else {
+        setBleMessage('BLE 连接失败：未知错误。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。')
+      }
     }
   }
 
@@ -544,6 +657,7 @@ if (error instanceof Error) {
 
     sourceModeRef.current = nextConfig.heartRateSourceMode
     sourceRef.current = new MockHeartRateSource()
+    normalWindowBoundsRef.current = null
 
     setBpm(nextBpm)
     setManualInput(String(nextBpm))
@@ -554,15 +668,19 @@ if (error instanceof Error) {
   return (
     <main className={`app-shell ${isPureDisplay ? 'pure-display-shell' : ''}`}>
       {isPureDisplay ? (
-        <section
-          className="pure-display-view no-drag"
-          onDoubleClick={handleTogglePureDisplay}
-        >
+        <section className="pure-display-view no-drag">
           <div
             ref={pureHeartRef}
             className="pure-heart-row"
+            title="按住拖动位置，双击退出纯享模式"
+            onMouseDown={handlePureDisplayMouseDown}
+            onDoubleClick={handlePureDisplayDoubleClick}
             onMouseEnter={() => window.heartdock.setClickThrough(false)}
-            onMouseLeave={() => window.heartdock.setClickThrough(true)}
+            onMouseLeave={() => {
+              if (!pureDragStateRef.current.isDragging) {
+                window.heartdock.setClickThrough(true)
+              }
+            }}
           >
             <span className="heart pure-heart" style={{ color: bpmColor }}>
               ♥
@@ -702,6 +820,38 @@ if (error instanceof Error) {
                 </div>
               )}
 
+              <div className="quick-options">
+                <label className="option-card">
+                  <input
+                    type="checkbox"
+                    checked={config.alwaysOnTop}
+                    onChange={(event) => updateConfig('alwaysOnTop', event.target.checked)}
+                  />
+                  <span className="option-content">
+                    <span className="option-title">始终置顶</span>
+                    <span className="option-desc">让 HeartDock 保持在其他窗口上方。</span>
+                  </span>
+                  <span className="option-switch" aria-hidden="true" />
+                </label>
+
+                <label className="option-card option-card-primary">
+                  <input
+                    type="checkbox"
+                    checked={config.pureDisplay}
+                    onChange={() => void handleTogglePureDisplay()}
+                  />
+                  <span className="option-content">
+                    <span className="option-title">纯享显示模式</span>
+                    <span className="option-desc">隐藏设置面板，只保留心率本体显示。</span>
+                  </span>
+                  <span className="option-switch" aria-hidden="true" />
+                </label>
+              </div>
+
+              <p className="hint">
+                纯享模式下可以按住心率本体拖动位置，双击心率区域退出纯享模式。
+              </p>
+
               <label>
                 主题预设
                 <select
@@ -745,28 +895,6 @@ if (error instanceof Error) {
 
               <p className="hint">
                 背景透明度会在隐藏设置面板后生效。设置面板打开时会使用不透明背景，避免桌面内容透出影响可读性。
-              </p>
-
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={config.alwaysOnTop}
-                  onChange={(event) => updateConfig('alwaysOnTop', event.target.checked)}
-                />
-                始终置顶
-              </label>
-
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={config.pureDisplay}
-                  onChange={handleTogglePureDisplay}
-                />
-                纯享显示模式
-              </label>
-
-              <p className="hint">
-                开启后会隐藏设置面板和窗口装饰，只保留心率显示。双击心率数字区域可退出纯享模式。
               </p>
 
               <div className="click-through-status">
