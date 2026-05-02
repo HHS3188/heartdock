@@ -2,7 +2,11 @@
 
 HeartDock 是一个面向 Windows 的可自定义桌面心率悬浮窗工具。
 
-它基于 Electron + React 构建，目标是提供一个轻量、可定制、适合桌面显示 / 直播 / 录屏叠加的心率显示工具。当前项目仍处于早期预发布阶段，但已经支持模拟心率、手动输入心率和实验性 BLE 心率设备读取。
+它基于 Electron + React 构建，目标是提供一个轻量、清爽、可定制的心率显示窗口，适合桌面显示、直播、录屏叠加和日常观察心率变化。
+
+当前项目仍处于早期预发布阶段，但已经支持模拟心率、手动输入心率，以及实验性的标准 BLE 心率设备读取。
+
+---
 
 ## 功能特性
 
@@ -25,12 +29,15 @@ HeartDock 是一个面向 Windows 的可自定义桌面心率悬浮窗工具。
 - 本地配置持久化
 - 主题预设切换
 - 中文设置界面
-- 点击穿透状态提示
+- 窗口位置和尺寸保存
 - 适合 GitHub 项目管理的基础结构
+
+---
 
 ## 当前状态
 
-本项目目前处于早期开发阶段，当前 v0.1.x 系列已经完成基础桌面悬浮窗、主题预设、窗口状态保存、实验性 BLE 心率读取和纯享心率显示模式。
+HeartDock 当前处于 v0.1.x 早期预发布阶段。  
+目前已经完成基础桌面悬浮窗、主题预设、窗口状态保存、实验性 BLE 心率读取和纯享心率显示模式。
 
 | 版本 | 状态 | 说明 |
 |---|---|---|
@@ -40,23 +47,23 @@ HeartDock 是一个面向 Windows 的可自定义桌面心率悬浮窗工具。
 | v0.1.4 | 已发布 | 修复窗口状态保存和恢复逻辑 |
 | v0.1.5 | 已发布 | 增加心率数据源模式，支持模拟和手动输入 |
 | v0.1.6 | 已发布 | 增加实验性 BLE 心率数据源，支持标准 BLE 心率读取 |
-| v0.1.7 | 开发中 | 新增纯享心率显示模式，优化透明窗口和显示体验 |
-| v0.2.0 | 计划中 | 进一步完善 BLE 连接稳定性、自动重连和设备兼容性 |
-| v0.3.0 | 计划中 | 小米手环研究和实验性适配 |
-| v0.4.0 | 计划中 | 目标窗口跟随模式 |
+| v0.1.7 | 已发布 | 新增纯享心率显示模式，优化透明窗口和显示体验 |
+| v0.2.0 | 计划中 | 进一步完善 BLE 连接稳定性、重连提示和设备兼容性 |
+| v0.3.0 | 计划中 | 优化纯享模式、点击穿透和目标窗口显示体验 |
 | v1.0.0 | 计划中 | 稳定 Windows 发布版本 |
 
-## 推荐运行环境
+---
 
-建议使用以下环境运行和开发本项目：
+## 推荐开发环境
+
+如果你想从源码运行或参与开发，建议使用以下环境：
 
 - Windows 10 / Windows 11
 - Node.js 22 LTS
-- npm 10+
 - Git
 - 支持 BLE 的 Windows 设备
 
-本项目当前已经作为一个 Electron + React 项目在 Windows 环境下运行成功。BLE 功能目前属于实验性功能，优先支持标准 BLE Heart Rate Service，不保证所有手环、手表或厂商私有协议设备都能直接连接。
+---
 
 ## 本地运行说明
 
@@ -72,23 +79,9 @@ npm install
 npm run dev
 ```
 
-运行 TypeScript 类型检查：
+如果依赖安装完成并启动成功，HeartDock 会以 Electron 窗口形式运行。
 
-```bash
-npm run typecheck
-```
-
-构建项目：
-
-```bash
-npm run build
-```
-
-创建 Windows 安装包：
-
-```bash
-npm run dist
-```
+---
 
 ## 数据源模式
 
@@ -105,7 +98,10 @@ BLE 模式目前优先支持标准蓝牙心率服务：
 - Heart Rate Service: `0x180D`
 - Heart Rate Measurement: `0x2A37`
 
-如果设备使用厂商私有协议、需要认证密钥或不广播标准心率服务，当前版本可能无法直接读取。
+如果设备支持标准 BLE Heart Rate Service，HeartDock 有机会直接读取实时心率。  
+如果设备使用厂商私有协议、需要认证密钥，或者不广播标准心率服务，当前版本可能无法直接读取。
+
+---
 
 ## 纯享心率显示模式
 
@@ -117,7 +113,10 @@ BLE 模式目前优先支持标准蓝牙心率服务：
 - BPM 数字
 - `bpm` 单位
 
-纯享模式会尽量保持背景透明，只显示心率本体。可以通过双击心率显示区域退出纯享模式。
+纯享模式会尽量保持背景透明，只显示心率本体。  
+可以通过双击心率显示区域退出纯享模式。
+
+---
 
 ## 快捷键
 
@@ -125,7 +124,53 @@ BLE 模式目前优先支持标准蓝牙心率服务：
 |---|---|
 | Ctrl + Shift + H | 开启 / 关闭点击穿透模式 |
 
-如果开启了点击穿透模式，鼠标点击会穿过悬浮窗，无法直接点击悬浮窗界面。可以使用 `Ctrl + Shift + H` 关闭点击穿透模式。
+如果开启了点击穿透模式，鼠标点击会穿过悬浮窗，无法直接点击悬浮窗界面。  
+可以使用 `Ctrl + Shift + H` 关闭点击穿透模式。
+
+---
+
+## Electron 依赖下载问题
+
+在中国大陆或网络不稳定环境下，`npm install` 可能会卡在 Electron 依赖安装阶段。
+
+常见错误包括：
+
+```text
+RequestError: read ECONNRESET
+node_modules/electron
+node install.js
+```
+
+这通常不是项目代码问题，而是 Electron 安装时需要额外下载二进制文件，下载过程被中断了。
+
+可以尝试设置 npm 和 Electron 镜像：
+
+```bash
+npm config set registry https://registry.npmmirror.com
+npm config set electron_mirror https://npmmirror.com/mirrors/electron/
+npm config set electron_builder_binaries_mirror https://npmmirror.com/mirrors/electron-builder-binaries/
+```
+
+如果已经装到一半失败，建议关闭残留进程并重新安装：
+
+```bash
+taskkill /F /IM node.exe
+taskkill /F /IM electron.exe
+rmdir /s /q node_modules
+npm install
+```
+
+如果还是卡在 Electron 下载，可以在当前命令行窗口临时设置镜像后再安装：
+
+```bash
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+npm install
+```
+
+如果 `node_modules` 删除失败，通常是文件被 VS Code、资源管理器、杀毒软件或残留进程占用。  
+可以关闭相关程序后重试，必要时重启电脑再执行安装。
+
+---
 
 ## 当前限制
 
@@ -140,7 +185,6 @@ HeartDock 当前优先支持以下场景：
 
 - BLE 心率数据源仍为实验功能
 - 暂不保证所有 BLE 设备都能连接
-- 暂不处理小米手环私有认证协议
 - 暂未支持 BLE 自动重连
 - 暂未提供正式 Windows 安装包
 - 独占全屏程序上方显示不保证可用
@@ -150,15 +194,7 @@ HeartDock 当前优先支持以下场景：
 
 [docs/overlay-limitations.md](docs/overlay-limitations.md)
 
-## 小米手环支持
-
-小米手环支持已经列入计划，但当前版本暂未包含完整私有协议适配。
-
-当前 BLE 功能优先支持标准 Heart Rate Service。部分小米手环 / 手表如果能开启运动心率广播或标准 BLE 心率服务，可能可以被实验性 BLE 数据源读取；但如果设备需要 auth key、私有认证或厂商专有命令，当前版本暂不支持。
-
-更多说明见：
-
-[docs/mi-band-notes.md](docs/mi-band-notes.md)
+---
 
 ## 开发路线
 
@@ -172,13 +208,15 @@ HeartDock 当前优先支持以下场景：
 6. 增加纯享心率显示模式
 7. 优化透明窗口、点击穿透和显示区域交互
 8. 增强 BLE 连接稳定性和设备兼容性
-9. 研究小米手环认证和数据读取
+9. 提供 Windows 安装包
 10. 增加目标窗口跟随模式
-11. 打包稳定 Windows 安装版本
+11. 打包稳定 Windows 发布版本
 
 详细路线见：
 
 [docs/roadmap.md](docs/roadmap.md)
+
+---
 
 ## License / 许可证
 
