@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "description": "A customizable desktop heart rate overlay for Windows.",
   "author": "Your Name",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "private": false,
   "type": "module",
   "main": "out/main/index.js",
