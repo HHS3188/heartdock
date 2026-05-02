@@ -267,6 +267,23 @@ function createOverlayWindow(): void {
   overlayWindow.webContents.on('did-finish-load', () => {
     console.log('[HeartDock] renderer loaded')
   })
+  
+  overlayWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
+  event.preventDefault()
+
+  const selectedDevice = deviceList.find((device) => Boolean(device.deviceName)) ?? deviceList[0]
+
+  if (!selectedDevice) {
+    return
+  }
+
+  console.log(
+    '[HeartDock] selected BLE device:',
+    selectedDevice.deviceName || selectedDevice.deviceId
+  )
+
+  callback(selectedDevice.deviceId)
+})
 
   overlayWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error('[HeartDock] renderer failed to load:', errorCode, errorDescription, validatedURL)

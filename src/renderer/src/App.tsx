@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   HeartDockConfig,
   HeartRateSourceMode,
@@ -7,10 +7,49 @@ import {
   createDefaultConfig,
   loadConfig,
   normalizeBpm,
+  normalizeRefreshIntervalMs,
   saveConfig,
   themePresets
 } from './config'
 import { MockHeartRateSource } from './core/MockHeartRateSource'
+
+type BleConnectionStatus = 'idle' | 'connecting' | 'connected' | 'failed'
+
+interface BleCharacteristic {
+  value?: DataView
+  startNotifications: () => Promise<BleCharacteristic>
+  stopNotifications?: () => Promise<BleCharacteristic>
+  addEventListener: (type: 'characteristicvaluechanged', listener: (event: Event) => void) => void
+  removeEventListener: (type: 'characteristicvaluechanged', listener: (event: Event) => void) => void
+}
+
+interface BleService {
+  getCharacteristic: (characteristic: string) => Promise<BleCharacteristic>
+}
+
+interface BleServer {
+  connected?: boolean
+  connect: () => Promise<BleServer>
+  disconnect?: () => void
+  getPrimaryService: (service: string) => Promise<BleService>
+}
+
+interface BleDevice {
+  id: string
+  name?: string
+  gatt?: BleServer
+  addEventListener: (type: 'gattserverdisconnected', listener: (event: Event) => void) => void
+  removeEventListener: (type: 'gattserverdisconnected', listener: (event: Event) => void) => void
+}
+
+interface NavigatorWithBluetooth extends Navigator {
+  bluetooth?: {
+    requestDevice: (options: {
+      filters: Array<{ services: string[] }>
+      optionalServices?: string[]
+    }) => Promise<BleDevice>
+  }
+}
 
 function getColorForBpm(bpm: number, config: HeartDockConfig): string {
   const rule = config.colorRules.find((item) => bpm >= item.min && bpm <= item.max)
@@ -22,7 +61,54 @@ function getSourceLabel(sourceMode: HeartRateSourceMode): string {
     return '手动'
   }
 
+  if (sourceMode === 'ble') {
+    return 'BLE'
+  }
+
   return '模拟'
+}
+
+function parseHeartRateMeasurement(value: DataView): number | null {
+  if (value.byteLength < 2) {
+    return null
+  }
+
+  const flags = value.getUint8(0)
+  const is16BitHeartRate = (flags & 0x01) === 0x01
+
+  if (is16BitHeartRate) {
+    if (value.byteLength < 3) {
+      return null
+    }
+
+    return normalizeBpm(value.getUint16(1, true))
+  }
+
+  return normalizeBpm(value.getUint8(1))
+}
+
+function getBleDeviceDisplayName(device: BleDevice): string {
+  const fallbackName = `BLE 心率设备 ${device.id.slice(0, 8)}`
+  const rawName = device.name?.trim()
+
+  if (!rawName) {
+    return fallbackName
+  }
+
+  const cleanedName = rawName
+    .replace(/\uFFFD/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleanedName) {
+    return fallbackName
+  }
+
+  if (cleanedName.toLowerCase() === 'xiaomi') {
+    return 'Xiaomi 心率设备'
+  }
+
+  return cleanedName
 }
 
 function App() {
@@ -33,11 +119,21 @@ function App() {
   }
 
   const sourceRef = useRef(new MockHeartRateSource())
+  const sourceModeRef = useRef<HeartRateSourceMode>(initialConfigRef.current.heartRateSourceMode)
+  const bleDeviceRef = useRef<BleDevice | null>(null)
+  const bleCharacteristicRef = useRef<BleCharacteristic | null>(null)
+
   const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
   const [manualInput, setManualInput] = useState(() =>
     String(normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   )
+  const [refreshIntervalInput, setRefreshIntervalInput] = useState(() =>
+    String(normalizeRefreshIntervalMs(initialConfigRef.current?.refreshIntervalMs ?? 1000))
+  )
+  const [bleStatus, setBleStatus] = useState<BleConnectionStatus>('idle')
+  const [bleDeviceName, setBleDeviceName] = useState('')
+  const [bleMessage, setBleMessage] = useState('尚未连接 BLE 心率设备。')
 
   const bpmColor = useMemo(() => getColorForBpm(bpm, config), [bpm, config])
   const currentTheme = useMemo(
@@ -46,12 +142,20 @@ function App() {
   )
 
   useEffect(() => {
+    sourceModeRef.current = config.heartRateSourceMode
+  }, [config.heartRateSourceMode])
+
+  useEffect(() => {
     saveConfig(config)
   }, [config])
 
   useEffect(() => {
     setManualInput(String(normalizeBpm(config.manualBpm)))
   }, [config.manualBpm])
+
+  useEffect(() => {
+    setRefreshIntervalInput(String(normalizeRefreshIntervalMs(config.refreshIntervalMs)))
+  }, [config.refreshIntervalMs])
 
   useEffect(() => {
     window.heartdock.setAlwaysOnTop(config.alwaysOnTop)
@@ -75,13 +179,21 @@ function App() {
       return
     }
 
+    if (config.heartRateSourceMode === 'ble') {
+      return
+    }
+
     if (config.mockPaused) {
       return
     }
 
+    const safeRefreshIntervalMs = normalizeRefreshIntervalMs(config.refreshIntervalMs)
+
+    setBpm(sourceRef.current.next())
+
     const timer = window.setInterval(() => {
       setBpm(sourceRef.current.next())
-    }, config.refreshIntervalMs)
+    }, safeRefreshIntervalMs)
 
     return () => window.clearInterval(timer)
   }, [config.heartRateSourceMode, config.manualBpm, config.mockPaused, config.refreshIntervalMs])
@@ -94,7 +206,175 @@ function App() {
     setConfig((current) => applyThemePreset(current, themeId))
   }
 
+  const getBleStatusText = (): string => {
+    if (bleStatus === 'connecting') {
+      return '连接中'
+    }
+
+    if (bleStatus === 'connected') {
+      return '已连接'
+    }
+
+    if (bleStatus === 'failed') {
+      return '连接失败'
+    }
+
+    return '未连接'
+  }
+
+  const handleBleMeasurement = useCallback((event: Event): void => {
+    if (sourceModeRef.current !== 'ble') {
+      return
+    }
+
+    const characteristic = event.target as BleCharacteristic | null
+    const value = characteristic?.value
+
+    if (!value) {
+      return
+    }
+
+    const nextBpm = parseHeartRateMeasurement(value)
+
+    if (nextBpm === null) {
+      setBleMessage('收到心率数据，但暂时无法解析。')
+      return
+    }
+
+    setBpm(nextBpm)
+    setBleStatus('connected')
+    setBleMessage(`正在接收 BLE 心率数据：${nextBpm} bpm`)
+  }, [])
+
+  const handleBleDisconnected = useCallback((): void => {
+    setBleStatus('idle')
+    setBleMessage('BLE 设备已断开连接。可以重新点击连接心率设备。')
+    bleCharacteristicRef.current = null
+    bleDeviceRef.current = null
+  }, [])
+
+  const disconnectBleDevice = useCallback(
+    async (message = 'BLE 连接已关闭。'): Promise<void> => {
+      const characteristic = bleCharacteristicRef.current
+      const device = bleDeviceRef.current
+
+      setBleStatus('idle')
+      setBleDeviceName('')
+      setBleMessage(message)
+
+      if (characteristic) {
+        characteristic.removeEventListener('characteristicvaluechanged', handleBleMeasurement)
+
+        try {
+          await characteristic.stopNotifications?.()
+        } catch (error) {
+          console.warn('[HeartDock] failed to stop BLE notifications:', error)
+        }
+      }
+
+      if (device) {
+        device.removeEventListener('gattserverdisconnected', handleBleDisconnected)
+
+        try {
+          if (device.gatt?.connected) {
+            device.gatt.disconnect?.()
+          }
+        } catch (error) {
+          console.warn('[HeartDock] failed to disconnect BLE device:', error)
+        }
+      }
+
+      bleCharacteristicRef.current = null
+      bleDeviceRef.current = null
+    },
+    [handleBleDisconnected, handleBleMeasurement]
+  )
+
+  const handleConnectBleDevice = async (): Promise<void> => {
+    const bluetooth = (navigator as NavigatorWithBluetooth).bluetooth
+
+    if (!bluetooth) {
+      setBleStatus('failed')
+      setBleDeviceName('')
+      setBleMessage('当前环境不支持 Web Bluetooth。请确认 Electron / Chromium 环境和系统蓝牙支持。')
+      return
+    }
+
+    try {
+      await disconnectBleDevice('正在准备重新连接 BLE 心率设备。')
+
+      setBleStatus('connecting')
+      setBleMessage('正在请求 BLE 心率设备，请确保设备已开启心率广播或标准心率服务。')
+
+      const device = await bluetooth.requestDevice({
+        filters: [{ services: ['heart_rate'] }],
+        optionalServices: ['heart_rate']
+      })
+
+      if (sourceModeRef.current !== 'ble') {
+        return
+      }
+
+      bleDeviceRef.current = device
+      setBleDeviceName(getBleDeviceDisplayName(device))
+      setBleMessage('已选择设备，正在连接 GATT 服务。')
+
+      device.addEventListener('gattserverdisconnected', handleBleDisconnected)
+
+      const server = await device.gatt?.connect()
+
+      if (!server) {
+        throw new Error('无法连接设备 GATT 服务。')
+      }
+
+      if (sourceModeRef.current !== 'ble') {
+        server.disconnect?.()
+        return
+      }
+
+      const service = await server.getPrimaryService('heart_rate')
+      const characteristic = await service.getCharacteristic('heart_rate_measurement')
+
+      bleCharacteristicRef.current = characteristic
+      characteristic.addEventListener('characteristicvaluechanged', handleBleMeasurement)
+
+      await characteristic.startNotifications()
+
+      setBleStatus('connected')
+      setBleMessage('已连接 BLE 心率设备，等待心率数据通知。')
+    } catch (error) {
+      if (sourceModeRef.current !== 'ble') {
+        return
+      }
+
+      setBleStatus('failed')
+
+      if (error instanceof Error) {
+        setBleMessage(`BLE 连接失败：${error.message}`)
+      } else {
+        setBleMessage('BLE 连接失败：未知错误。')
+      }
+    }
+  }
+
   const handleSourceModeChange = (sourceMode: HeartRateSourceMode): void => {
+    sourceModeRef.current = sourceMode
+
+    if (sourceMode === 'mock') {
+      sourceRef.current = new MockHeartRateSource()
+      setBpm(sourceRef.current.next())
+    }
+
+    if (config.heartRateSourceMode === 'ble' && sourceMode !== 'ble') {
+      void disconnectBleDevice('已切换到其他数据源，BLE 连接已关闭。')
+    }
+
+    if (sourceMode === 'ble') {
+      setBleStatus('idle')
+      setBleDeviceName('')
+      setBleMessage('尚未连接 BLE 心率设备。')
+    }
+
     setConfig((current) => {
       if (sourceMode === 'manual') {
         const manualBpm = normalizeBpm(current.manualBpm)
@@ -154,6 +434,37 @@ function App() {
     }
   }
 
+  const applyRefreshIntervalMs = (): void => {
+    const trimmed = refreshIntervalInput.trim()
+
+    if (!trimmed) {
+      const fallback = normalizeRefreshIntervalMs(config.refreshIntervalMs)
+      setRefreshIntervalInput(String(fallback))
+      updateConfig('refreshIntervalMs', fallback)
+      return
+    }
+
+    const parsed = Number(trimmed)
+
+    if (!Number.isFinite(parsed)) {
+      const fallback = normalizeRefreshIntervalMs(config.refreshIntervalMs)
+      setRefreshIntervalInput(String(fallback))
+      updateConfig('refreshIntervalMs', fallback)
+      return
+    }
+
+    const nextRefreshIntervalMs = normalizeRefreshIntervalMs(parsed)
+
+    setRefreshIntervalInput(String(nextRefreshIntervalMs))
+    updateConfig('refreshIntervalMs', nextRefreshIntervalMs)
+  }
+
+  const handleRefreshIntervalKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'Enter') {
+      applyRefreshIntervalMs()
+    }
+  }
+
   const handleResetConfig = (): void => {
     const confirmed = window.confirm('确定要重置所有显示设置吗？')
 
@@ -162,8 +473,14 @@ function App() {
     const nextConfig = createDefaultConfig()
     const nextBpm = normalizeBpm(nextConfig.manualBpm)
 
+    void disconnectBleDevice('已重置显示设置，BLE 连接已关闭。')
+
+    sourceModeRef.current = nextConfig.heartRateSourceMode
+    sourceRef.current = new MockHeartRateSource()
+
     setBpm(nextBpm)
     setManualInput(String(nextBpm))
+    setRefreshIntervalInput(String(normalizeRefreshIntervalMs(nextConfig.refreshIntervalMs)))
     setConfig(nextConfig)
   }
 
@@ -219,6 +536,7 @@ function App() {
               >
                 <option value="mock">模拟心率</option>
                 <option value="manual">手动输入</option>
+                <option value="ble">BLE 心率设备（实验）</option>
               </select>
             </label>
 
@@ -257,6 +575,43 @@ function App() {
               <p className="hint">手动模式会固定显示输入的 bpm，适合调试样式或临时展示。范围：30 - 240。</p>
             )}
 
+            {config.heartRateSourceMode === 'ble' && (
+              <div className="source-panel">
+                <div className="ble-status-row">
+                  <span>连接状态</span>
+                  <strong>{getBleStatusText()}</strong>
+                </div>
+
+                {bleDeviceName && (
+                  <div className="ble-status-row">
+                    <span>设备名称</span>
+                    <strong>{bleDeviceName}</strong>
+                  </div>
+                )}
+
+                {bleStatus === 'connected' ? (
+                  <button
+                    className="secondary-button danger-button"
+                    type="button"
+                    onClick={() => void disconnectBleDevice('BLE 连接已手动关闭。')}
+                  >
+                    断开 BLE 连接
+                  </button>
+                ) : (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={bleStatus === 'connecting'}
+                    onClick={handleConnectBleDevice}
+                  >
+                    {bleStatus === 'connecting' ? '正在连接...' : '连接心率设备'}
+                  </button>
+                )}
+
+                <p className="hint">{bleMessage}</p>
+              </div>
+            )}
+
             <label>
               主题预设
               <select
@@ -289,9 +644,12 @@ function App() {
               <input
                 type="number"
                 min="250"
+                max="10000"
                 step="250"
-                value={config.refreshIntervalMs}
-                onChange={(event) => updateConfig('refreshIntervalMs', Number(event.target.value))}
+                value={refreshIntervalInput}
+                onChange={(event) => setRefreshIntervalInput(event.target.value)}
+                onBlur={applyRefreshIntervalMs}
+                onKeyDown={handleRefreshIntervalKeyDown}
               />
             </label>
 
