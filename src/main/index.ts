@@ -1,6 +1,5 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 interface WindowState {
@@ -154,18 +153,6 @@ function getCurrentWindowState(): WindowState | null {
   }
 }
 
-async function saveWindowStateAsync(): Promise<void> {
-  const state = getCurrentWindowState()
-
-  if (!state) return
-
-  try {
-    await writeFile(getWindowStatePath(), JSON.stringify(state, null, 2), 'utf-8')
-  } catch (error) {
-    console.error('[HeartDock] failed to save window state:', error)
-  }
-}
-
 function saveWindowStateSync(): void {
   const state = getCurrentWindowState()
 
@@ -185,7 +172,7 @@ function scheduleSaveWindowState(): void {
 
   saveWindowStateTimer = setTimeout(() => {
     saveWindowStateTimer = null
-    void saveWindowStateAsync()
+    saveWindowStateSync()
   }, 300)
 }
 
