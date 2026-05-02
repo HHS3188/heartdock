@@ -5,7 +5,7 @@ export interface ColorRule {
 }
 
 export type ThemePresetId = 'default' | 'transparent' | 'highContrast' | 'streamer'
-export type HeartRateSourceMode = 'mock' | 'manual'
+export type HeartRateSourceMode = 'mock' | 'manual' | 'ble'
 
 export interface ThemePreset {
   id: ThemePresetId

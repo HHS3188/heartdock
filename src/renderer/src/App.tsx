@@ -12,6 +12,8 @@ import {
 } from './config'
 import { MockHeartRateSource } from './core/MockHeartRateSource'
 
+type BleConnectionStatus = 'idle' | 'connecting' | 'connected' | 'failed'
+
 function getColorForBpm(bpm: number, config: HeartDockConfig): string {
   const rule = config.colorRules.find((item) => bpm >= item.min && bpm <= item.max)
   return rule?.color ?? '#ffffff'
@@ -20,6 +22,10 @@ function getColorForBpm(bpm: number, config: HeartDockConfig): string {
 function getSourceLabel(sourceMode: HeartRateSourceMode): string {
   if (sourceMode === 'manual') {
     return '手动'
+  }
+
+  if (sourceMode === 'ble') {
+    return 'BLE'
   }
 
   return '模拟'
@@ -38,6 +44,9 @@ function App() {
   const [manualInput, setManualInput] = useState(() =>
     String(normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   )
+  const [bleStatus, setBleStatus] = useState<BleConnectionStatus>('idle')
+  const [bleDeviceName, setBleDeviceName] = useState('')
+  const [bleMessage, setBleMessage] = useState('尚未连接 BLE 心率设备。')
 
   const bpmColor = useMemo(() => getColorForBpm(bpm, config), [bpm, config])
   const currentTheme = useMemo(
@@ -75,6 +84,10 @@ function App() {
       return
     }
 
+    if (config.heartRateSourceMode === 'ble') {
+      return
+    }
+
     if (config.mockPaused) {
       return
     }
@@ -94,7 +107,35 @@ function App() {
     setConfig((current) => applyThemePreset(current, themeId))
   }
 
+  const getBleStatusText = (): string => {
+    if (bleStatus === 'connecting') {
+      return '连接中'
+    }
+
+    if (bleStatus === 'connected') {
+      return '已连接'
+    }
+
+    if (bleStatus === 'failed') {
+      return '连接失败'
+    }
+
+    return '未连接'
+  }
+
+  const handleConnectBleDevice = (): void => {
+    setBleStatus('failed')
+    setBleDeviceName('')
+    setBleMessage('BLE 连接功能将在下一步接入 Web Bluetooth。当前版本已先预留连接入口和状态显示。')
+  }
+
   const handleSourceModeChange = (sourceMode: HeartRateSourceMode): void => {
+    if (sourceMode === 'ble') {
+      setBleStatus('idle')
+      setBleDeviceName('')
+      setBleMessage('尚未连接 BLE 心率设备。')
+    }
+
     setConfig((current) => {
       if (sourceMode === 'manual') {
         const manualBpm = normalizeBpm(current.manualBpm)
@@ -164,6 +205,9 @@ function App() {
 
     setBpm(nextBpm)
     setManualInput(String(nextBpm))
+    setBleStatus('idle')
+    setBleDeviceName('')
+    setBleMessage('尚未连接 BLE 心率设备。')
     setConfig(nextConfig)
   }
 
@@ -219,6 +263,7 @@ function App() {
               >
                 <option value="mock">模拟心率</option>
                 <option value="manual">手动输入</option>
+                <option value="ble">BLE 心率设备（实验）</option>
               </select>
             </label>
 
@@ -255,6 +300,33 @@ function App() {
 
             {config.heartRateSourceMode === 'manual' && (
               <p className="hint">手动模式会固定显示输入的 bpm，适合调试样式或临时展示。范围：30 - 240。</p>
+            )}
+
+            {config.heartRateSourceMode === 'ble' && (
+              <div className="source-panel">
+                <div className="ble-status-row">
+                  <span>连接状态</span>
+                  <strong>{getBleStatusText()}</strong>
+                </div>
+
+                {bleDeviceName && (
+                  <div className="ble-status-row">
+                    <span>设备名称</span>
+                    <strong>{bleDeviceName}</strong>
+                  </div>
+                )}
+
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={bleStatus === 'connecting'}
+                  onClick={handleConnectBleDevice}
+                >
+                  {bleStatus === 'connecting' ? '正在连接...' : '连接心率设备'}
+                </button>
+
+                <p className="hint">{bleMessage}</p>
+              </div>
             )}
 
             <label>
