@@ -5,6 +5,7 @@ export interface ColorRule {
 }
 
 export type ThemePresetId = 'default' | 'transparent' | 'highContrast' | 'streamer'
+export type HeartRateSourceMode = 'mock' | 'manual'
 
 export interface ThemePreset {
   id: ThemePresetId
@@ -17,6 +18,9 @@ export interface ThemePreset {
 
 export interface HeartDockConfig {
   themePresetId: ThemePresetId
+  heartRateSourceMode: HeartRateSourceMode
+  mockPaused: boolean
+  manualBpm: number
   refreshIntervalMs: number
   fontSize: number
   backgroundOpacity: number
@@ -79,6 +83,9 @@ export const themePresets: ThemePreset[] = [
 
 export const defaultConfig: HeartDockConfig = {
   themePresetId: 'default',
+  heartRateSourceMode: 'mock',
+  mockPaused: false,
+  manualBpm: 78,
   refreshIntervalMs: 1000,
   fontSize: 64,
   backgroundOpacity: 0.24,
@@ -110,20 +117,31 @@ export function applyThemePreset(config: HeartDockConfig, themeId: ThemePresetId
   }
 }
 
+export function normalizeBpm(value: number): number {
+  if (!Number.isFinite(value)) {
+    return defaultConfig.manualBpm
+  }
+
+  return Math.min(Math.max(Math.round(value), 30), 240)
+}
+
 export function loadConfig(): HeartDockConfig {
   const raw = localStorage.getItem(CONFIG_KEY)
 
   if (!raw) {
-    return defaultConfig
+    return createDefaultConfig()
   }
 
   try {
+    const parsed = JSON.parse(raw) as Partial<HeartDockConfig>
+
     return {
-      ...defaultConfig,
-      ...JSON.parse(raw)
+      ...createDefaultConfig(),
+      ...parsed,
+      manualBpm: normalizeBpm(parsed.manualBpm ?? defaultConfig.manualBpm)
     }
   } catch {
-    return defaultConfig
+    return createDefaultConfig()
   }
 }
 

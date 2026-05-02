@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   HeartDockConfig,
+  HeartRateSourceMode,
   ThemePresetId,
   applyThemePreset,
   createDefaultConfig,
   loadConfig,
+  normalizeBpm,
   saveConfig,
   themePresets
 } from './config'
@@ -15,10 +17,27 @@ function getColorForBpm(bpm: number, config: HeartDockConfig): string {
   return rule?.color ?? '#ffffff'
 }
 
+function getSourceLabel(sourceMode: HeartRateSourceMode): string {
+  if (sourceMode === 'manual') {
+    return '手动'
+  }
+
+  return '模拟'
+}
+
 function App() {
+  const initialConfigRef = useRef<HeartDockConfig | null>(null)
+
+  if (initialConfigRef.current === null) {
+    initialConfigRef.current = loadConfig()
+  }
+
   const sourceRef = useRef(new MockHeartRateSource())
-  const [bpm, setBpm] = useState(78)
-  const [config, setConfig] = useState<HeartDockConfig>(() => loadConfig())
+  const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
+  const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
+  const [manualInput, setManualInput] = useState(() =>
+    String(normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
+  )
 
   const bpmColor = useMemo(() => getColorForBpm(bpm, config), [bpm, config])
   const currentTheme = useMemo(
@@ -29,6 +48,10 @@ function App() {
   useEffect(() => {
     saveConfig(config)
   }, [config])
+
+  useEffect(() => {
+    setManualInput(String(normalizeBpm(config.manualBpm)))
+  }, [config.manualBpm])
 
   useEffect(() => {
     window.heartdock.setAlwaysOnTop(config.alwaysOnTop)
@@ -47,12 +70,21 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (config.heartRateSourceMode === 'manual') {
+      setBpm(normalizeBpm(config.manualBpm))
+      return
+    }
+
+    if (config.mockPaused) {
+      return
+    }
+
     const timer = window.setInterval(() => {
       setBpm(sourceRef.current.next())
     }, config.refreshIntervalMs)
 
     return () => window.clearInterval(timer)
-  }, [config.refreshIntervalMs])
+  }, [config.heartRateSourceMode, config.manualBpm, config.mockPaused, config.refreshIntervalMs])
 
   const updateConfig = <K extends keyof HeartDockConfig>(key: K, value: HeartDockConfig[K]): void => {
     setConfig((current) => ({ ...current, [key]: value }))
@@ -62,12 +94,77 @@ function App() {
     setConfig((current) => applyThemePreset(current, themeId))
   }
 
+  const handleSourceModeChange = (sourceMode: HeartRateSourceMode): void => {
+    setConfig((current) => {
+      if (sourceMode === 'manual') {
+        const manualBpm = normalizeBpm(current.manualBpm)
+
+        setBpm(manualBpm)
+        setManualInput(String(manualBpm))
+
+        return {
+          ...current,
+          heartRateSourceMode: sourceMode,
+          manualBpm
+        }
+      }
+
+      return {
+        ...current,
+        heartRateSourceMode: sourceMode
+      }
+    })
+  }
+
+  const handleManualInputChange = (value: string): void => {
+    setManualInput(value)
+  }
+
+  const applyManualBpm = (): void => {
+    const trimmed = manualInput.trim()
+
+    if (!trimmed) {
+      const fallback = normalizeBpm(config.manualBpm)
+      setManualInput(String(fallback))
+      setBpm(fallback)
+      updateConfig('manualBpm', fallback)
+      return
+    }
+
+    const parsed = Number(trimmed)
+
+    if (!Number.isFinite(parsed)) {
+      const fallback = normalizeBpm(config.manualBpm)
+      setManualInput(String(fallback))
+      setBpm(fallback)
+      updateConfig('manualBpm', fallback)
+      return
+    }
+
+    const nextBpm = normalizeBpm(parsed)
+
+    setManualInput(String(nextBpm))
+    setBpm(nextBpm)
+    updateConfig('manualBpm', nextBpm)
+  }
+
+  const handleManualInputKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'Enter') {
+      applyManualBpm()
+    }
+  }
+
   const handleResetConfig = (): void => {
     const confirmed = window.confirm('确定要重置所有显示设置吗？')
 
     if (!confirmed) return
 
-    setConfig(createDefaultConfig())
+    const nextConfig = createDefaultConfig()
+    const nextBpm = normalizeBpm(nextConfig.manualBpm)
+
+    setBpm(nextBpm)
+    setManualInput(String(nextBpm))
+    setConfig(nextConfig)
   }
 
   return (
@@ -79,7 +176,7 @@ function App() {
         }}
       >
         <div className="top-row">
-          <span className="badge">模拟</span>
+          <span className="badge">{getSourceLabel(config.heartRateSourceMode)}</span>
 
           <div className="window-actions no-drag">
             <button
@@ -114,6 +211,52 @@ function App() {
 
         {config.showSettings && (
           <div className="settings-panel no-drag">
+            <label>
+              数据源
+              <select
+                value={config.heartRateSourceMode}
+                onChange={(event) => handleSourceModeChange(event.target.value as HeartRateSourceMode)}
+              >
+                <option value="mock">模拟心率</option>
+                <option value="manual">手动输入</option>
+              </select>
+            </label>
+
+            {config.heartRateSourceMode === 'mock' && (
+              <div className="source-panel">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => updateConfig('mockPaused', !config.mockPaused)}
+                >
+                  {config.mockPaused ? '继续模拟心率' : '暂停模拟心率'}
+                </button>
+                <p className="hint">
+                  模拟模式会按照刷新间隔自动生成心率，适合测试悬浮窗样式和颜色变化。
+                </p>
+              </div>
+            )}
+
+            {config.heartRateSourceMode === 'manual' && (
+              <label>
+                手动心率
+                <input
+                  type="number"
+                  min="30"
+                  max="240"
+                  step="1"
+                  value={manualInput}
+                  onChange={(event) => handleManualInputChange(event.target.value)}
+                  onBlur={applyManualBpm}
+                  onKeyDown={handleManualInputKeyDown}
+                />
+              </label>
+            )}
+
+            {config.heartRateSourceMode === 'manual' && (
+              <p className="hint">手动模式会固定显示输入的 bpm，适合调试样式或临时展示。范围：30 - 240。</p>
+            )}
+
             <label>
               主题预设
               <select
