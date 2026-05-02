@@ -130,8 +130,9 @@ function loadWindowState(): WindowState {
     const parsedState = JSON.parse(raw) as WindowState
 
     return sanitizeWindowState({
-      ...DEFAULT_WINDOW_STATE,
-      ...parsedState
+      ...parsedState,
+      width: DEFAULT_WINDOW_STATE.width,
+      height: DEFAULT_WINDOW_STATE.height
     })
   } catch {
     return centerInPrimaryDisplay(DEFAULT_WINDOW_STATE.width, DEFAULT_WINDOW_STATE.height)
@@ -146,8 +147,8 @@ function getCurrentWindowState(): WindowState | null {
   const bounds = overlayWindow.getBounds()
 
   return {
-    width: bounds.width,
-    height: bounds.height,
+    width: DEFAULT_WINDOW_STATE.width,
+    height: DEFAULT_WINDOW_STATE.height,
     x: bounds.x,
     y: bounds.y
   }
@@ -220,6 +221,70 @@ function registerIpcHandlers(): void {
     overlayWindow?.close()
   })
 
+  ipcMain.handle('overlay:move-window-by', (_event, deltaX: number, deltaY: number) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) {
+      return false
+    }
+
+    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) {
+      return false
+    }
+
+    const bounds = overlayWindow.getBounds()
+
+    overlayWindow.setBounds(
+      {
+        ...bounds,
+        x: bounds.x + Math.round(deltaX),
+        y: bounds.y + Math.round(deltaY)
+      },
+      false
+    )
+
+    scheduleSaveWindowState()
+
+    return true
+  })
+
+  ipcMain.handle('overlay:get-window-bounds', () => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) {
+      return null
+    }
+
+    return overlayWindow.getBounds()
+  })
+
+  ipcMain.handle(
+    'overlay:set-window-bounds',
+    (_event, bounds: { x: number; y: number; width: number; height: number }) => {
+      if (!overlayWindow || overlayWindow.isDestroyed()) {
+        return false
+      }
+
+      if (
+        !Number.isFinite(bounds.x) ||
+        !Number.isFinite(bounds.y) ||
+        !Number.isFinite(bounds.width) ||
+        !Number.isFinite(bounds.height)
+      ) {
+        return false
+      }
+
+      const nextBounds = {
+        x: Math.round(bounds.x),
+        y: Math.round(bounds.y),
+        width: Math.max(Math.round(bounds.width), MIN_WINDOW_STATE.width),
+        height: Math.max(Math.round(bounds.height), MIN_WINDOW_STATE.height)
+      }
+
+      overlayWindow.setBounds(nextBounds, false)
+      scheduleSaveWindowState()
+
+      return true
+    }
+  )
+
+
   ipcMain.handle('set-always-on-top', (_event, value: boolean) => {
     return setOverlayAlwaysOnTop(value)
   })
@@ -270,21 +335,21 @@ function createOverlayWindow(): void {
   })
   
   overlayWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
-  event.preventDefault()
+    event.preventDefault()
 
-  const selectedDevice = deviceList.find((device) => Boolean(device.deviceName)) ?? deviceList[0]
+    const selectedDevice = deviceList.find((device) => Boolean(device.deviceName)) ?? deviceList[0]
 
-  if (!selectedDevice) {
-    return
-  }
+    if (!selectedDevice) {
+      return
+    }
 
-  console.log(
-    '[HeartDock] selected BLE device:',
-    selectedDevice.deviceName || selectedDevice.deviceId
-  )
+    console.log(
+      '[HeartDock] selected BLE device:',
+      selectedDevice.deviceName || selectedDevice.deviceId
+    )
 
-  callback(selectedDevice.deviceId)
-})
+    callback(selectedDevice.deviceId)
+  })
 
   overlayWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error('[HeartDock] renderer failed to load:', errorCode, errorDescription, validatedURL)
