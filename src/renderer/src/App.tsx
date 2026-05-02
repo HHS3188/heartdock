@@ -134,9 +134,19 @@ function App() {
   )
   const [bleStatus, setBleStatus] = useState<BleConnectionStatus>('idle')
   const [bleDeviceName, setBleDeviceName] = useState('')
-  const [bleMessage, setBleMessage] = useState('尚未连接 BLE 心率设备。')
+  const [bleMessage, setBleMessage] = useState(
+  '尚未连接 BLE 心率设备。请先开启 Windows 蓝牙，并确保心率设备正在广播标准心率服务。连接前心率将显示为 -- bpm。'
+)
 
-  const bpmColor = useMemo(() => getColorForBpm(bpm, config), [bpm, config])
+  const shouldShowBlePlaceholder =
+    config.heartRateSourceMode === 'ble' && bleStatus !== 'connected'
+
+  const displayBpm = shouldShowBlePlaceholder ? '--' : String(bpm)
+
+  const bpmColor = useMemo(
+    () => (shouldShowBlePlaceholder ? '#94a3b8' : getColorForBpm(bpm, config)),
+    [bpm, config, shouldShowBlePlaceholder]
+  )
   const currentTheme = useMemo(
     () => themePresets.find((theme) => theme.id === config.themePresetId) ?? themePresets[0],
     [config.themePresetId]
@@ -299,7 +309,7 @@ function App() {
 
   const handleBleDisconnected = useCallback((): void => {
     setBleStatus('idle')
-    setBleMessage('BLE 设备已断开连接。可以重新点击连接心率设备。')
+    setBleMessage('BLE 设备已断开连接。当前不再接收实时心率，可以重新点击连接心率设备。')
     bleCharacteristicRef.current = null
     bleDeviceRef.current = null
   }, [])
@@ -355,7 +365,7 @@ function App() {
       await disconnectBleDevice('正在准备重新连接 BLE 心率设备。')
 
       setBleStatus('connecting')
-      setBleMessage('正在请求 BLE 心率设备，请确保设备已开启心率广播或标准心率服务。')
+      setBleMessage('正在请求 BLE 心率设备。请确认 Windows 蓝牙已开启，并让心率设备开启心率广播或标准 BLE Heart Rate Service。')
 
       const device = await bluetooth.requestDevice({
         filters: [{ services: ['heart_rate'] }],
@@ -398,13 +408,19 @@ function App() {
         return
       }
 
-      setBleStatus('failed')
+if (error instanceof Error && error.message.includes('User cancelled')) {
+  setBleStatus('idle')
+  setBleMessage('未选择 BLE 心率设备。请确认 Windows 蓝牙已开启，设备正在广播心率服务，然后重新点击连接。')
+  return
+}
 
-      if (error instanceof Error) {
-        setBleMessage(`BLE 连接失败：${error.message}`)
-      } else {
-        setBleMessage('BLE 连接失败：未知错误。')
-      }
+setBleStatus('failed')
+
+if (error instanceof Error) {
+  setBleMessage(`BLE 连接失败：${error.message}。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。`)
+} else {
+  setBleMessage('BLE 连接失败：未知错误。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。')
+}
     }
   }
 
@@ -423,7 +439,7 @@ function App() {
     if (sourceMode === 'ble') {
       setBleStatus('idle')
       setBleDeviceName('')
-      setBleMessage('尚未连接 BLE 心率设备。')
+      setBleMessage('尚未连接 BLE 心率设备。请先开启 Windows 蓝牙，并确保心率设备正在广播标准心率服务。连接前心率将显示为 -- bpm。')
     }
 
     setConfig((current) => {
@@ -552,7 +568,7 @@ function App() {
               ♥
             </span>
             <span className="bpm pure-bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
-              {bpm}
+              {displayBpm}
             </span>
             <span className="unit pure-unit">bpm</span>
           </div>
@@ -595,7 +611,7 @@ function App() {
               ♥
             </span>
             <span className="bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
-              {bpm}
+              {displayBpm}
             </span>
             <span className="unit">bpm</span>
           </div>
@@ -727,17 +743,9 @@ function App() {
                 />
               </label>
 
-              <label>
-                背景透明度
-                <input
-                  type="range"
-                  min="0"
-                  max="0.8"
-                  step="0.02"
-                  value={config.backgroundOpacity}
-                  onChange={(event) => updateConfig('backgroundOpacity', Number(event.target.value))}
-                />
-              </label>
+              <p className="hint">
+                背景透明度会在隐藏设置面板后生效。设置面板打开时会使用不透明背景，避免桌面内容透出影响可读性。
+              </p>
 
               <label className="checkbox-row">
                 <input
