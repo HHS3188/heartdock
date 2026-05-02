@@ -27,6 +27,7 @@ export interface HeartDockConfig {
   alwaysOnTop: boolean
   clickThrough: boolean
   showSettings: boolean
+  pureDisplay: boolean
   colorRules: ColorRule[]
 }
 
@@ -92,6 +93,7 @@ export const defaultConfig: HeartDockConfig = {
   alwaysOnTop: true,
   clickThrough: false,
   showSettings: true,
+  pureDisplay: false,
   colorRules: [
     { min: 0, max: 90, color: '#4ade80' },
     { min: 91, max: 120, color: '#facc15' },
@@ -151,7 +153,11 @@ export function loadConfig(): HeartDockConfig {
       manualBpm: normalizeBpm(parsed.manualBpm ?? defaultConfig.manualBpm),
       refreshIntervalMs: normalizeRefreshIntervalMs(
         parsed.refreshIntervalMs ?? defaultConfig.refreshIntervalMs
-      )
+      ),
+      clickThrough: Boolean(parsed.clickThrough ?? defaultConfig.clickThrough),
+      showSettings: Boolean(parsed.showSettings ?? defaultConfig.showSettings),
+      pureDisplay: Boolean(parsed.pureDisplay ?? defaultConfig.pureDisplay),
+      colorRules: parsed.colorRules ?? [...defaultConfig.colorRules]
     }
   } catch {
     return createDefaultConfig()
@@ -167,6 +173,9 @@ export function createDefaultConfig(): HeartDockConfig {
     ...defaultConfig,
     refreshIntervalMs: normalizeRefreshIntervalMs(defaultConfig.refreshIntervalMs),
     manualBpm: normalizeBpm(defaultConfig.manualBpm),
+    clickThrough: defaultConfig.clickThrough,
+    showSettings: defaultConfig.showSettings,
+    pureDisplay: defaultConfig.pureDisplay,
     colorRules: [...defaultConfig.colorRules]
   }
 }
