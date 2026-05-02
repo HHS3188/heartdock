@@ -122,6 +122,7 @@ function App() {
   const sourceModeRef = useRef<HeartRateSourceMode>(initialConfigRef.current.heartRateSourceMode)
   const bleDeviceRef = useRef<BleDevice | null>(null)
   const bleCharacteristicRef = useRef<BleCharacteristic | null>(null)
+  const pureHeartRef = useRef<HTMLDivElement | null>(null)
 
   const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
@@ -140,6 +141,7 @@ function App() {
     () => themePresets.find((theme) => theme.id === config.themePresetId) ?? themePresets[0],
     [config.themePresetId]
   )
+  const isPureDisplay = config.pureDisplay
 
   useEffect(() => {
     sourceModeRef.current = config.heartRateSourceMode
@@ -162,8 +164,49 @@ function App() {
   }, [config.alwaysOnTop])
 
   useEffect(() => {
+    if (config.pureDisplay) {
+      return
+    }
+
     window.heartdock.setClickThrough(config.clickThrough)
-  }, [config.clickThrough])
+  }, [config.clickThrough, config.pureDisplay])
+
+  useEffect(() => {
+    if (!config.pureDisplay) {
+      return
+    }
+
+    let isHeartInteractive = false
+
+    const updatePureDisplayHitTest = (event: MouseEvent): void => {
+      const rect = pureHeartRef.current?.getBoundingClientRect()
+
+      if (!rect) {
+        return
+      }
+
+      const isInsideHeart =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+
+      if (isInsideHeart === isHeartInteractive) {
+        return
+      }
+
+      isHeartInteractive = isInsideHeart
+      window.heartdock.setClickThrough(!isInsideHeart)
+    }
+
+    window.heartdock.setClickThrough(true)
+    window.addEventListener('mousemove', updatePureDisplayHitTest)
+
+    return () => {
+      window.removeEventListener('mousemove', updatePureDisplayHitTest)
+      window.heartdock.setClickThrough(config.clickThrough)
+    }
+  }, [config.clickThrough, config.pureDisplay])
 
   useEffect(() => {
     const unsubscribe = window.heartdock.onClickThroughChanged((enabled) => {
@@ -204,6 +247,14 @@ function App() {
 
   const handleThemeChange = (themeId: ThemePresetId): void => {
     setConfig((current) => applyThemePreset(current, themeId))
+  }
+
+  const handleTogglePureDisplay = (): void => {
+    setConfig((current) => ({
+      ...current,
+      pureDisplay: !current.pureDisplay,
+      showSettings: current.pureDisplay ? true : false
+    }))
   }
 
   const getBleStatusText = (): string => {
@@ -485,210 +536,247 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <section
-        className="overlay-card"
-        style={{
-          backgroundColor: `rgba(15, 23, 42, ${config.backgroundOpacity})`
-        }}
-      >
-        <div className="top-row">
-          <span className="badge">{getSourceLabel(config.heartRateSourceMode)}</span>
-
-          <div className="window-actions no-drag">
-            <button
-              className="icon-button"
-              type="button"
-              title="显示或隐藏设置"
-              onClick={() => updateConfig('showSettings', !config.showSettings)}
-            >
-              ⚙
-            </button>
-
-            <button
-              className="icon-button close-button"
-              type="button"
-              title="关闭 HeartDock"
-              onClick={() => window.heartdock.closeWindow()}
-            >
-              ×
-            </button>
+    <main className={`app-shell ${isPureDisplay ? 'pure-display-shell' : ''}`}>
+      {isPureDisplay ? (
+        <section
+          className="pure-display-view no-drag"
+          onDoubleClick={handleTogglePureDisplay}
+        >
+          <div
+            ref={pureHeartRef}
+            className="pure-heart-row"
+            onMouseEnter={() => window.heartdock.setClickThrough(false)}
+            onMouseLeave={() => window.heartdock.setClickThrough(true)}
+          >
+            <span className="heart pure-heart" style={{ color: bpmColor }}>
+              ♥
+            </span>
+            <span className="bpm pure-bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
+              {bpm}
+            </span>
+            <span className="unit pure-unit">bpm</span>
           </div>
-        </div>
+        </section>
+      ) : (
+        <section
+          className="overlay-card"
+          style={{
+            backgroundColor: config.showSettings
+              ? '#0f172a'
+              : `rgba(15, 23, 42, ${config.backgroundOpacity})`
+          }}
+        >
+          <div className="top-row">
+            <span className="badge">{getSourceLabel(config.heartRateSourceMode)}</span>
 
-        <div className="heart-row">
-          <span className="heart" style={{ color: bpmColor }}>
-            ♥
-          </span>
-          <span className="bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
-            {bpm}
-          </span>
-          <span className="unit">bpm</span>
-        </div>
-
-        {config.showSettings && (
-          <div className="settings-panel no-drag">
-            <label>
-              数据源
-              <select
-                value={config.heartRateSourceMode}
-                onChange={(event) => handleSourceModeChange(event.target.value as HeartRateSourceMode)}
+            <div className="window-actions no-drag">
+              <button
+                className="icon-button"
+                type="button"
+                title="显示或隐藏设置"
+                onClick={() => updateConfig('showSettings', !config.showSettings)}
               >
-                <option value="mock">模拟心率</option>
-                <option value="manual">手动输入</option>
-                <option value="ble">BLE 心率设备（实验）</option>
-              </select>
-            </label>
+                ⚙
+              </button>
 
-            {config.heartRateSourceMode === 'mock' && (
-              <div className="source-panel">
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => updateConfig('mockPaused', !config.mockPaused)}
-                >
-                  {config.mockPaused ? '继续模拟心率' : '暂停模拟心率'}
-                </button>
-                <p className="hint">
-                  模拟模式会按照刷新间隔自动生成心率，适合测试悬浮窗样式和颜色变化。
-                </p>
-              </div>
-            )}
+              <button
+                className="icon-button close-button"
+                type="button"
+                title="关闭 HeartDock"
+                onClick={() => window.heartdock.closeWindow()}
+              >
+                ×
+              </button>
+            </div>
+          </div>
 
-            {config.heartRateSourceMode === 'manual' && (
+          <div className="heart-row">
+            <span className="heart" style={{ color: bpmColor }}>
+              ♥
+            </span>
+            <span className="bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
+              {bpm}
+            </span>
+            <span className="unit">bpm</span>
+          </div>
+
+          {config.showSettings && (
+            <div className="settings-panel no-drag">
               <label>
-                手动心率
-                <input
-                  type="number"
-                  min="30"
-                  max="240"
-                  step="1"
-                  value={manualInput}
-                  onChange={(event) => handleManualInputChange(event.target.value)}
-                  onBlur={applyManualBpm}
-                  onKeyDown={handleManualInputKeyDown}
-                />
+                数据源
+                <select
+                  value={config.heartRateSourceMode}
+                  onChange={(event) => handleSourceModeChange(event.target.value as HeartRateSourceMode)}
+                >
+                  <option value="mock">模拟心率</option>
+                  <option value="manual">手动输入</option>
+                  <option value="ble">BLE 心率设备（实验）</option>
+                </select>
               </label>
-            )}
 
-            {config.heartRateSourceMode === 'manual' && (
-              <p className="hint">手动模式会固定显示输入的 bpm，适合调试样式或临时展示。范围：30 - 240。</p>
-            )}
-
-            {config.heartRateSourceMode === 'ble' && (
-              <div className="source-panel">
-                <div className="ble-status-row">
-                  <span>连接状态</span>
-                  <strong>{getBleStatusText()}</strong>
-                </div>
-
-                {bleDeviceName && (
-                  <div className="ble-status-row">
-                    <span>设备名称</span>
-                    <strong>{bleDeviceName}</strong>
-                  </div>
-                )}
-
-                {bleStatus === 'connected' ? (
-                  <button
-                    className="secondary-button danger-button"
-                    type="button"
-                    onClick={() => void disconnectBleDevice('BLE 连接已手动关闭。')}
-                  >
-                    断开 BLE 连接
-                  </button>
-                ) : (
+              {config.heartRateSourceMode === 'mock' && (
+                <div className="source-panel">
                   <button
                     className="secondary-button"
                     type="button"
-                    disabled={bleStatus === 'connecting'}
-                    onClick={handleConnectBleDevice}
+                    onClick={() => updateConfig('mockPaused', !config.mockPaused)}
                   >
-                    {bleStatus === 'connecting' ? '正在连接...' : '连接心率设备'}
+                    {config.mockPaused ? '继续模拟心率' : '暂停模拟心率'}
                   </button>
-                )}
+                  <p className="hint">
+                    模拟模式会按照刷新间隔自动生成心率，适合测试悬浮窗样式和颜色变化。
+                  </p>
+                </div>
+              )}
 
-                <p className="hint">{bleMessage}</p>
+              {config.heartRateSourceMode === 'manual' && (
+                <label>
+                  手动心率
+                  <input
+                    type="number"
+                    min="30"
+                    max="240"
+                    step="1"
+                    value={manualInput}
+                    onChange={(event) => handleManualInputChange(event.target.value)}
+                    onBlur={applyManualBpm}
+                    onKeyDown={handleManualInputKeyDown}
+                  />
+                </label>
+              )}
+
+              {config.heartRateSourceMode === 'manual' && (
+                <p className="hint">手动模式会固定显示输入的 bpm，适合调试样式或临时展示。范围：30 - 240。</p>
+              )}
+
+              {config.heartRateSourceMode === 'ble' && (
+                <div className="source-panel">
+                  <div className="ble-status-row">
+                    <span>连接状态</span>
+                    <strong>{getBleStatusText()}</strong>
+                  </div>
+
+                  {bleDeviceName && (
+                    <div className="ble-status-row">
+                      <span>设备名称</span>
+                      <strong>{bleDeviceName}</strong>
+                    </div>
+                  )}
+
+                  {bleStatus === 'connected' ? (
+                    <button
+                      className="secondary-button danger-button"
+                      type="button"
+                      onClick={() => void disconnectBleDevice('BLE 连接已手动关闭。')}
+                    >
+                      断开 BLE 连接
+                    </button>
+                  ) : (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={bleStatus === 'connecting'}
+                      onClick={handleConnectBleDevice}
+                    >
+                      {bleStatus === 'connecting' ? '正在连接...' : '连接心率设备'}
+                    </button>
+                  )}
+
+                  <p className="hint">{bleMessage}</p>
+                </div>
+              )}
+
+              <label>
+                主题预设
+                <select
+                  value={config.themePresetId}
+                  onChange={(event) => handleThemeChange(event.target.value as ThemePresetId)}
+                >
+                  {themePresets.map((theme) => (
+                    <option key={theme.id} value={theme.id}>
+                      {theme.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <p className="hint">{currentTheme.description}</p>
+
+              <label>
+                字体大小
+                <input
+                  type="range"
+                  min="36"
+                  max="96"
+                  value={config.fontSize}
+                  onChange={(event) => updateConfig('fontSize', Number(event.target.value))}
+                />
+              </label>
+
+              <label>
+                刷新间隔 ms
+                <input
+                  type="number"
+                  min="250"
+                  max="10000"
+                  step="250"
+                  value={refreshIntervalInput}
+                  onChange={(event) => setRefreshIntervalInput(event.target.value)}
+                  onBlur={applyRefreshIntervalMs}
+                  onKeyDown={handleRefreshIntervalKeyDown}
+                />
+              </label>
+
+              <label>
+                背景透明度
+                <input
+                  type="range"
+                  min="0"
+                  max="0.8"
+                  step="0.02"
+                  value={config.backgroundOpacity}
+                  onChange={(event) => updateConfig('backgroundOpacity', Number(event.target.value))}
+                />
+              </label>
+
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={config.alwaysOnTop}
+                  onChange={(event) => updateConfig('alwaysOnTop', event.target.checked)}
+                />
+                始终置顶
+              </label>
+
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={config.pureDisplay}
+                  onChange={handleTogglePureDisplay}
+                />
+                纯享显示模式
+              </label>
+
+              <p className="hint">
+                开启后会隐藏设置面板和窗口装饰，只保留心率显示。双击心率数字区域可退出纯享模式。
+              </p>
+
+              <div className="click-through-status">
+                <span>点击穿透</span>
+                <strong>{config.clickThrough ? '已开启' : '已关闭'}</strong>
               </div>
-            )}
 
-            <label>
-              主题预设
-              <select
-                value={config.themePresetId}
-                onChange={(event) => handleThemeChange(event.target.value as ThemePresetId)}
-              >
-                {themePresets.map((theme) => (
-                  <option key={theme.id} value={theme.id}>
-                    {theme.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <p className="hint">
+                点击穿透开启后，鼠标会穿过悬浮窗，无法直接点击此窗口。请使用 Ctrl + Shift + H 开启或关闭点击穿透。
+              </p>
 
-            <p className="hint">{currentTheme.description}</p>
-
-            <label>
-              字体大小
-              <input
-                type="range"
-                min="36"
-                max="96"
-                value={config.fontSize}
-                onChange={(event) => updateConfig('fontSize', Number(event.target.value))}
-              />
-            </label>
-
-            <label>
-              刷新间隔 ms
-              <input
-                type="number"
-                min="250"
-                max="10000"
-                step="250"
-                value={refreshIntervalInput}
-                onChange={(event) => setRefreshIntervalInput(event.target.value)}
-                onBlur={applyRefreshIntervalMs}
-                onKeyDown={handleRefreshIntervalKeyDown}
-              />
-            </label>
-
-            <label>
-              背景透明度
-              <input
-                type="range"
-                min="0"
-                max="0.8"
-                step="0.02"
-                value={config.backgroundOpacity}
-                onChange={(event) => updateConfig('backgroundOpacity', Number(event.target.value))}
-              />
-            </label>
-
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={config.alwaysOnTop}
-                onChange={(event) => updateConfig('alwaysOnTop', event.target.checked)}
-              />
-              始终置顶
-            </label>
-
-            <div className="click-through-status">
-              <span>点击穿透</span>
-              <strong>{config.clickThrough ? '已开启' : '已关闭'}</strong>
+              <button className="reset-button" type="button" onClick={handleResetConfig}>
+                重置显示设置
+              </button>
             </div>
-
-            <p className="hint">
-              点击穿透开启后，鼠标会穿过悬浮窗，无法直接点击此窗口。请使用 Ctrl + Shift + H 开启或关闭点击穿透。
-            </p>
-
-            <button className="reset-button" type="button" onClick={handleResetConfig}>
-              重置显示设置
-            </button>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      )}
     </main>
   )
 }
