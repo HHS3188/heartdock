@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { HeartDockConfig, loadConfig, saveConfig } from './config'
+import {
+  HeartDockConfig,
+  ThemePresetId,
+  applyThemePreset,
+  loadConfig,
+  saveConfig,
+  themePresets
+} from './config'
 import { MockHeartRateSource } from './core/MockHeartRateSource'
 
 function getColorForBpm(bpm: number, config: HeartDockConfig): string {
@@ -13,6 +20,10 @@ function App() {
   const [config, setConfig] = useState<HeartDockConfig>(() => loadConfig())
 
   const bpmColor = useMemo(() => getColorForBpm(bpm, config), [bpm, config])
+  const currentTheme = useMemo(
+    () => themePresets.find((theme) => theme.id === config.themePresetId) ?? themePresets[0],
+    [config.themePresetId]
+  )
 
   useEffect(() => {
     saveConfig(config)
@@ -46,6 +57,10 @@ function App() {
     setConfig((current) => ({ ...current, [key]: value }))
   }
 
+  const handleThemeChange = (themeId: ThemePresetId): void => {
+    setConfig((current) => applyThemePreset(current, themeId))
+  }
+
   return (
     <main className="app-shell">
       <section
@@ -55,11 +70,11 @@ function App() {
         }}
       >
         <div className="top-row">
-          <span className="badge">MOCK</span>
+          <span className="badge">模拟</span>
           <button
             className="icon-button no-drag"
             type="button"
-            title="Show or hide settings"
+            title="显示或隐藏设置"
             onClick={() => updateConfig('showSettings', !config.showSettings)}
           >
             ⚙
@@ -67,7 +82,9 @@ function App() {
         </div>
 
         <div className="heart-row">
-          <span className="heart" style={{ color: bpmColor }}>♥</span>
+          <span className="heart" style={{ color: bpmColor }}>
+            ♥
+          </span>
           <span className="bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
             {bpm}
           </span>
@@ -77,7 +94,23 @@ function App() {
         {config.showSettings && (
           <div className="settings-panel no-drag">
             <label>
-              Font size
+              主题预设
+              <select
+                value={config.themePresetId}
+                onChange={(event) => handleThemeChange(event.target.value as ThemePresetId)}
+              >
+                {themePresets.map((theme) => (
+                  <option key={theme.id} value={theme.id}>
+                    {theme.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <p className="hint">{currentTheme.description}</p>
+
+            <label>
+              字体大小
               <input
                 type="range"
                 min="36"
@@ -88,7 +121,7 @@ function App() {
             </label>
 
             <label>
-              Refresh ms
+              刷新间隔 ms
               <input
                 type="number"
                 min="250"
@@ -99,7 +132,7 @@ function App() {
             </label>
 
             <label>
-              Background
+              背景透明度
               <input
                 type="range"
                 min="0"
@@ -116,19 +149,17 @@ function App() {
                 checked={config.alwaysOnTop}
                 onChange={(event) => updateConfig('alwaysOnTop', event.target.checked)}
               />
-              Always on top
+              始终置顶
             </label>
 
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={config.clickThrough}
-                onChange={(event) => updateConfig('clickThrough', event.target.checked)}
-              />
-              Click-through
-            </label>
+            <div className="click-through-status">
+              <span>点击穿透</span>
+              <strong>{config.clickThrough ? '已开启' : '已关闭'}</strong>
+            </div>
 
-            <p className="hint">Click-through enabled? Press Ctrl + Shift + H to turn it off.</p>
+            <p className="hint">
+              点击穿透开启后，鼠标会穿过悬浮窗，无法直接点击此窗口。请使用 Ctrl + Shift + H 开启或关闭点击穿透。
+            </p>
           </div>
         )}
       </section>

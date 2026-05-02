@@ -53,10 +53,10 @@ function registerIpcHandlers(): void {
 
 function createOverlayWindow(): void {
   overlayWindow = new BrowserWindow({
-    width: 520,
-    height: 320,
-    minWidth: 320,
-    minHeight: 180,
+    width: 760,
+    height: 560,
+    minWidth: 520,
+    minHeight: 420,
     frame: false,
     transparent: false,
     backgroundColor: '#202124',
