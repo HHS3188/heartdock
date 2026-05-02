@@ -3,6 +3,7 @@ import {
   HeartDockConfig,
   ThemePresetId,
   applyThemePreset,
+  createDefaultConfig,
   loadConfig,
   saveConfig,
   themePresets
@@ -61,6 +62,14 @@ function App() {
     setConfig((current) => applyThemePreset(current, themeId))
   }
 
+  const handleResetConfig = (): void => {
+    const confirmed = window.confirm('确定要重置所有显示设置吗？')
+
+    if (!confirmed) return
+
+    setConfig(createDefaultConfig())
+  }
+
   return (
     <main className="app-shell">
       <section
@@ -71,14 +80,26 @@ function App() {
       >
         <div className="top-row">
           <span className="badge">模拟</span>
-          <button
-            className="icon-button no-drag"
-            type="button"
-            title="显示或隐藏设置"
-            onClick={() => updateConfig('showSettings', !config.showSettings)}
-          >
-            ⚙
-          </button>
+
+          <div className="window-actions no-drag">
+            <button
+              className="icon-button"
+              type="button"
+              title="显示或隐藏设置"
+              onClick={() => updateConfig('showSettings', !config.showSettings)}
+            >
+              ⚙
+            </button>
+
+            <button
+              className="icon-button close-button"
+              type="button"
+              title="关闭 HeartDock"
+              onClick={() => window.heartdock.closeWindow()}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="heart-row">
@@ -160,6 +181,10 @@ function App() {
             <p className="hint">
               点击穿透开启后，鼠标会穿过悬浮窗，无法直接点击此窗口。请使用 Ctrl + Shift + H 开启或关闭点击穿透。
             </p>
+
+            <button className="reset-button" type="button" onClick={handleResetConfig}>
+              重置显示设置
+            </button>
           </div>
         )}
       </section>
