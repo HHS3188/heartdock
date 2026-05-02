@@ -1,5 +1,6 @@
-import { app, BrowserWindow, globalShortcut, ipcMain } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 interface WindowState {
@@ -9,8 +10,21 @@ interface WindowState {
   y?: number
 }
 
+interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 let overlayWindow: BrowserWindow | null = null
 let clickThrough = false
+let saveWindowStateTimer: ReturnType<typeof setTimeout> | null = null
+
+const MIN_WINDOW_STATE: WindowState = {
+  width: 520,
+  height: 420
+}
 
 const DEFAULT_WINDOW_STATE: WindowState = {
   width: 760,
@@ -21,36 +35,167 @@ function getWindowStatePath(): string {
   return join(app.getPath('userData'), 'window-state.json')
 }
 
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return fallback
+  }
+
+  return Math.min(Math.max(Math.round(value), min), max)
+}
+
+function getNormalizedWindowSize(state: WindowState): Pick<WindowState, 'width' | 'height'> {
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea
+
+  return {
+    width: clampNumber(
+      state.width,
+      MIN_WINDOW_STATE.width,
+      Math.max(MIN_WINDOW_STATE.width, primaryWorkArea.width),
+      DEFAULT_WINDOW_STATE.width
+    ),
+    height: clampNumber(
+      state.height,
+      MIN_WINDOW_STATE.height,
+      Math.max(MIN_WINDOW_STATE.height, primaryWorkArea.height),
+      DEFAULT_WINDOW_STATE.height
+    )
+  }
+}
+
+function centerInPrimaryDisplay(width: number, height: number): WindowState {
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea
+
+  return {
+    width,
+    height,
+    x: Math.round(primaryWorkArea.x + (primaryWorkArea.width - width) / 2),
+    y: Math.round(primaryWorkArea.y + (primaryWorkArea.height - height) / 2)
+  }
+}
+
+function getIntersectionArea(first: WindowBounds, second: WindowBounds): number {
+  const left = Math.max(first.x, second.x)
+  const top = Math.max(first.y, second.y)
+  const right = Math.min(first.x + first.width, second.x + second.width)
+  const bottom = Math.min(first.y + first.height, second.y + second.height)
+
+  const width = Math.max(0, right - left)
+  const height = Math.max(0, bottom - top)
+
+  return width * height
+}
+
+function isWindowStateVisible(state: WindowState): boolean {
+  if (typeof state.x !== 'number' || typeof state.y !== 'number') {
+    return false
+  }
+
+  const windowBounds: WindowBounds = {
+    x: state.x,
+    y: state.y,
+    width: state.width,
+    height: state.height
+  }
+
+  return screen.getAllDisplays().some((display) => {
+    const visibleArea = getIntersectionArea(windowBounds, display.workArea)
+    const minimumVisibleArea = Math.min(120, state.width) * Math.min(80, state.height)
+
+    return visibleArea >= minimumVisibleArea
+  })
+}
+
+function sanitizeWindowState(state: WindowState): WindowState {
+  const normalizedSize = getNormalizedWindowSize(state)
+  const normalizedState: WindowState = {
+    ...state,
+    ...normalizedSize
+  }
+
+  if (isWindowStateVisible(normalizedState)) {
+    return normalizedState
+  }
+
+  return centerInPrimaryDisplay(normalizedSize.width, normalizedSize.height)
+}
+
 function loadWindowState(): WindowState {
   const statePath = getWindowStatePath()
 
   if (!existsSync(statePath)) {
-    return DEFAULT_WINDOW_STATE
+    return centerInPrimaryDisplay(DEFAULT_WINDOW_STATE.width, DEFAULT_WINDOW_STATE.height)
   }
 
   try {
     const raw = readFileSync(statePath, 'utf-8')
-    return {
+    const parsedState = JSON.parse(raw) as WindowState
+
+    return sanitizeWindowState({
       ...DEFAULT_WINDOW_STATE,
-      ...JSON.parse(raw)
-    }
+      ...parsedState
+    })
   } catch {
-    return DEFAULT_WINDOW_STATE
+    return centerInPrimaryDisplay(DEFAULT_WINDOW_STATE.width, DEFAULT_WINDOW_STATE.height)
   }
 }
 
-function saveWindowState(): void {
-  if (!overlayWindow) return
+function getCurrentWindowState(): WindowState | null {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    return null
+  }
 
   const bounds = overlayWindow.getBounds()
-  const state: WindowState = {
+
+  return {
     width: bounds.width,
     height: bounds.height,
     x: bounds.x,
     y: bounds.y
   }
+}
 
-  writeFileSync(getWindowStatePath(), JSON.stringify(state, null, 2))
+async function saveWindowStateAsync(): Promise<void> {
+  const state = getCurrentWindowState()
+
+  if (!state) return
+
+  try {
+    await writeFile(getWindowStatePath(), JSON.stringify(state, null, 2), 'utf-8')
+  } catch (error) {
+    console.error('[HeartDock] failed to save window state:', error)
+  }
+}
+
+function saveWindowStateSync(): void {
+  const state = getCurrentWindowState()
+
+  if (!state) return
+
+  try {
+    writeFileSync(getWindowStatePath(), JSON.stringify(state, null, 2), 'utf-8')
+  } catch (error) {
+    console.error('[HeartDock] failed to save window state:', error)
+  }
+}
+
+function scheduleSaveWindowState(): void {
+  if (saveWindowStateTimer) {
+    clearTimeout(saveWindowStateTimer)
+  }
+
+  saveWindowStateTimer = setTimeout(() => {
+    saveWindowStateTimer = null
+    void saveWindowStateAsync()
+  }, 300)
+}
+
+function flushWindowState(): void {
+  if (saveWindowStateTimer) {
+    clearTimeout(saveWindowStateTimer)
+    saveWindowStateTimer = null
+  }
+
+  saveWindowStateSync()
 }
 
 function setOverlayAlwaysOnTop(value: boolean): boolean {
@@ -109,8 +254,8 @@ function createOverlayWindow(): void {
     height: windowState.height,
     x: windowState.x,
     y: windowState.y,
-    minWidth: 520,
-    minHeight: 420,
+    minWidth: MIN_WINDOW_STATE.width,
+    minHeight: MIN_WINDOW_STATE.height,
     frame: false,
     transparent: false,
     backgroundColor: '#202124',
@@ -141,15 +286,15 @@ function createOverlayWindow(): void {
   })
 
   overlayWindow.on('resize', () => {
-    saveWindowState()
+    scheduleSaveWindowState()
   })
 
   overlayWindow.on('move', () => {
-    saveWindowState()
+    scheduleSaveWindowState()
   })
 
   overlayWindow.on('close', () => {
-    saveWindowState()
+    flushWindowState()
   })
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL || 'http://localhost:5173/'
