@@ -19,6 +19,7 @@ interface WindowBounds {
 let overlayWindow: BrowserWindow | null = null
 let clickThrough = false
 let saveWindowStateTimer: ReturnType<typeof setTimeout> | null = null
+let bluetoothSelectionTimer: ReturnType<typeof setTimeout> | null = null
 
 const MIN_WINDOW_STATE: WindowState = {
   width: 520,
@@ -130,9 +131,8 @@ function loadWindowState(): WindowState {
     const parsedState = JSON.parse(raw) as WindowState
 
     return sanitizeWindowState({
-      ...parsedState,
-      width: DEFAULT_WINDOW_STATE.width,
-      height: DEFAULT_WINDOW_STATE.height
+      ...DEFAULT_WINDOW_STATE,
+      ...parsedState
     })
   } catch {
     return centerInPrimaryDisplay(DEFAULT_WINDOW_STATE.width, DEFAULT_WINDOW_STATE.height)
@@ -147,8 +147,8 @@ function getCurrentWindowState(): WindowState | null {
   const bounds = overlayWindow.getBounds()
 
   return {
-    width: DEFAULT_WINDOW_STATE.width,
-    height: DEFAULT_WINDOW_STATE.height,
+    width: bounds.width,
+    height: bounds.height,
     x: bounds.x,
     y: bounds.y
   }
@@ -339,16 +339,30 @@ function createOverlayWindow(): void {
 
     const selectedDevice = deviceList.find((device) => Boolean(device.deviceName)) ?? deviceList[0]
 
-    if (!selectedDevice) {
+    if (selectedDevice) {
+      if (bluetoothSelectionTimer) {
+        clearTimeout(bluetoothSelectionTimer)
+        bluetoothSelectionTimer = null
+      }
+
+      console.log(
+        '[HeartDock] selected BLE device:',
+        selectedDevice.deviceName || selectedDevice.deviceId
+      )
+
+      callback(selectedDevice.deviceId)
       return
     }
 
-    console.log(
-      '[HeartDock] selected BLE device:',
-      selectedDevice.deviceName || selectedDevice.deviceId
-    )
+    if (bluetoothSelectionTimer) {
+      return
+    }
 
-    callback(selectedDevice.deviceId)
+    bluetoothSelectionTimer = setTimeout(() => {
+      bluetoothSelectionTimer = null
+      console.log('[HeartDock] no BLE heart rate device found, cancelling bluetooth selection')
+      callback('')
+    }, 8000)
   })
 
   overlayWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {

@@ -138,6 +138,7 @@ function App() {
   const sourceModeRef = useRef<HeartRateSourceMode>(initialConfigRef.current.heartRateSourceMode)
   const bleDeviceRef = useRef<BleDevice | null>(null)
   const bleCharacteristicRef = useRef<BleCharacteristic | null>(null)
+  const isManualBleDisconnectRef = useRef(false)
   const pureHeartRef = useRef<HTMLDivElement | null>(null)
   const normalWindowBoundsRef = useRef<HeartDockWindowBounds | null>(null)
   const pureDragStateRef = useRef({
@@ -160,6 +161,7 @@ function App() {
   )
   const [bleStatus, setBleStatus] = useState<BleConnectionStatus>('idle')
   const [bleDeviceName, setBleDeviceName] = useState('')
+  const [hasBleReconnectDevice, setHasBleReconnectDevice] = useState(false)
   const [bleMessage, setBleMessage] = useState(
     '尚未连接 BLE 心率设备。请先开启 Windows 蓝牙，并确保心率设备正在广播标准心率服务。连接前心率将显示为 -- bpm。'
   )
@@ -313,7 +315,6 @@ function App() {
     }
   }
 
-
   const handlePureDisplayDoubleClick = (): void => {
     if (pureDragMovedRef.current) {
       return
@@ -421,78 +422,49 @@ function App() {
   }, [])
 
   const handleBleDisconnected = useCallback((): void => {
-    setBleStatus('idle')
-    setBleMessage('BLE 设备已断开连接。当前不再接收实时心率，可以重新点击连接心率设备。')
-    bleCharacteristicRef.current = null
-    bleDeviceRef.current = null
-  }, [])
-
-  const disconnectBleDevice = useCallback(
-    async (message = 'BLE 连接已关闭。'): Promise<void> => {
-      const characteristic = bleCharacteristicRef.current
-      const device = bleDeviceRef.current
-
-      setBleStatus('idle')
-      setBleDeviceName('')
-      setBleMessage(message)
-
-      if (characteristic) {
-        characteristic.removeEventListener('characteristicvaluechanged', handleBleMeasurement)
-
-        try {
-          await characteristic.stopNotifications?.()
-        } catch (error) {
-          console.warn('[HeartDock] failed to stop BLE notifications:', error)
-        }
-      }
-
-      if (device) {
-        device.removeEventListener('gattserverdisconnected', handleBleDisconnected)
-
-        try {
-          if (device.gatt?.connected) {
-            device.gatt.disconnect?.()
-          }
-        } catch (error) {
-          console.warn('[HeartDock] failed to disconnect BLE device:', error)
-        }
-      }
-
-      bleCharacteristicRef.current = null
-      bleDeviceRef.current = null
-    },
-    [handleBleDisconnected, handleBleMeasurement]
-  )
-
-  const handleConnectBleDevice = async (): Promise<void> => {
-    const bluetooth = (navigator as NavigatorWithBluetooth).bluetooth
-
-    if (!bluetooth) {
-      setBleStatus('failed')
-      setBleDeviceName('')
-      setBleMessage('当前环境不支持 Web Bluetooth。请确认 Electron / Chromium 环境和系统蓝牙支持。')
+    if (isManualBleDisconnectRef.current) {
+      isManualBleDisconnectRef.current = false
       return
     }
 
-    try {
-      await disconnectBleDevice('正在准备重新连接 BLE 心率设备。')
+    const device = bleDeviceRef.current
 
-      setBleStatus('connecting')
-      setBleMessage('正在请求 BLE 心率设备。请确认 Windows 蓝牙已开启，并让心率设备开启心率广播或标准 BLE Heart Rate Service。')
+    bleCharacteristicRef.current = null
+    setBleStatus('idle')
 
-      const device = await bluetooth.requestDevice({
-        filters: [{ services: ['heart_rate'] }],
-        optionalServices: ['heart_rate']
-      })
+    if (device) {
+      const displayName = getBleDeviceDisplayName(device)
 
+      setBleDeviceName(displayName)
+      setHasBleReconnectDevice(true)
+      setBleMessage(`BLE 设备已断开连接。可以点击“重新连接上次设备”尝试重新连接 ${displayName}。`)
+      return
+    }
+
+    setBleDeviceName('')
+    setHasBleReconnectDevice(false)
+    setBleMessage('BLE 设备已断开连接。当前不再接收实时心率，可以重新点击连接心率设备。')
+  }, [])
+
+  const connectBleDevice = useCallback(
+    async (device: BleDevice, isReconnect = false): Promise<void> => {
       if (sourceModeRef.current !== 'ble') {
         return
       }
 
-      bleDeviceRef.current = device
-      setBleDeviceName(getBleDeviceDisplayName(device))
-      setBleMessage('已选择设备，正在连接 GATT 服务。')
+      const displayName = getBleDeviceDisplayName(device)
+      const previousDevice = bleDeviceRef.current
 
+      if (previousDevice && previousDevice !== device) {
+        previousDevice.removeEventListener('gattserverdisconnected', handleBleDisconnected)
+      }
+
+      setBleStatus('connecting')
+      setBleDeviceName(displayName)
+      setHasBleReconnectDevice(true)
+      setBleMessage(isReconnect ? `正在重新连接 ${displayName}。` : '已选择设备，正在连接 GATT 服务。')
+
+      device.removeEventListener('gattserverdisconnected', handleBleDisconnected)
       device.addEventListener('gattserverdisconnected', handleBleDisconnected)
 
       const server = await device.gatt?.connect()
@@ -509,13 +481,94 @@ function App() {
       const service = await server.getPrimaryService('heart_rate')
       const characteristic = await service.getCharacteristic('heart_rate_measurement')
 
+      bleDeviceRef.current = device
       bleCharacteristicRef.current = characteristic
+      characteristic.removeEventListener('characteristicvaluechanged', handleBleMeasurement)
       characteristic.addEventListener('characteristicvaluechanged', handleBleMeasurement)
 
       await characteristic.startNotifications()
 
       setBleStatus('connected')
-      setBleMessage('已连接 BLE 心率设备，等待心率数据通知。')
+      setHasBleReconnectDevice(true)
+      setBleDeviceName(displayName)
+      setBleMessage(isReconnect ? `已重新连接 ${displayName}，等待心率数据通知。` : '已连接 BLE 心率设备，等待心率数据通知。')
+    },
+    [handleBleDisconnected, handleBleMeasurement]
+  )
+
+  const disconnectBleDevice = useCallback(
+    async (message = 'BLE 连接已关闭。', clearDevice = true): Promise<void> => {
+      const characteristic = bleCharacteristicRef.current
+      const device = bleDeviceRef.current
+
+      setBleStatus('idle')
+      setBleMessage(message)
+
+      if (clearDevice) {
+        setBleDeviceName('')
+        setHasBleReconnectDevice(false)
+      } else if (device) {
+        setBleDeviceName(getBleDeviceDisplayName(device))
+        setHasBleReconnectDevice(true)
+      }
+
+      if (characteristic) {
+        characteristic.removeEventListener('characteristicvaluechanged', handleBleMeasurement)
+
+        try {
+          await characteristic.stopNotifications?.()
+        } catch (error) {
+          console.warn('[HeartDock] failed to stop BLE notifications:', error)
+        }
+      }
+
+      if (device) {
+        if (clearDevice) {
+          device.removeEventListener('gattserverdisconnected', handleBleDisconnected)
+        }
+
+        try {
+          if (device.gatt?.connected) {
+            isManualBleDisconnectRef.current = true
+            device.gatt.disconnect?.()
+          }
+        } catch (error) {
+          isManualBleDisconnectRef.current = false
+          console.warn('[HeartDock] failed to disconnect BLE device:', error)
+        }
+      }
+
+      bleCharacteristicRef.current = null
+
+      if (clearDevice) {
+        bleDeviceRef.current = null
+        isManualBleDisconnectRef.current = false
+      }
+    },
+    [handleBleDisconnected, handleBleMeasurement]
+  )
+
+  const handleConnectBleDevice = async (): Promise<void> => {
+    const bluetooth = (navigator as NavigatorWithBluetooth).bluetooth
+
+    if (!bluetooth) {
+      setBleStatus('failed')
+      setBleDeviceName('')
+      setHasBleReconnectDevice(false)
+      setBleMessage('当前环境不支持 Web Bluetooth。请确认 Electron / Chromium 环境和系统蓝牙支持。')
+      return
+    }
+
+    try {
+      setBleStatus('connecting')
+      setBleMessage('正在请求 BLE 心率设备。请确认 Windows 蓝牙已开启，并让心率设备开启心率广播或标准 BLE Heart Rate Service。')
+
+      const device = await bluetooth.requestDevice({
+        filters: [{ services: ['heart_rate'] }],
+        optionalServices: ['heart_rate']
+      })
+
+      await connectBleDevice(device, false)
     } catch (error) {
       if (sourceModeRef.current !== 'ble') {
         return
@@ -523,7 +576,11 @@ function App() {
 
       if (error instanceof Error && error.message.includes('User cancelled')) {
         setBleStatus('idle')
-        setBleMessage('未选择 BLE 心率设备。请确认 Windows 蓝牙已开启，设备正在广播心率服务，然后重新点击连接。')
+        setBleMessage(
+          hasBleReconnectDevice
+            ? '未选择新的 BLE 心率设备。可以重新连接上次设备，或确认其他设备正在广播心率服务后再选择。'
+            : '未选择 BLE 心率设备。请确认 Windows 蓝牙已开启，设备正在广播心率服务，然后重新点击连接。'
+        )
         return
       }
 
@@ -533,6 +590,36 @@ function App() {
         setBleMessage(`BLE 连接失败：${error.message}。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。`)
       } else {
         setBleMessage('BLE 连接失败：未知错误。请检查 Windows 蓝牙是否已开启，设备是否正在广播标准心率服务。')
+      }
+    }
+  }
+
+  const handleReconnectBleDevice = async (): Promise<void> => {
+    const device = bleDeviceRef.current
+
+    if (!device) {
+      setHasBleReconnectDevice(false)
+      setBleStatus('idle')
+      setBleMessage('没有可重连的 BLE 心率设备。请点击“连接心率设备”重新选择设备。')
+      return
+    }
+
+    try {
+      await connectBleDevice(device, true)
+    } catch (error) {
+      if (sourceModeRef.current !== 'ble') {
+        return
+      }
+
+      setBleStatus('failed')
+      setHasBleReconnectDevice(true)
+
+      const displayName = getBleDeviceDisplayName(device)
+
+      if (error instanceof Error) {
+        setBleMessage(`重新连接 ${displayName} 失败：${error.message}。请确认设备仍在附近、蓝牙已开启，并且心率广播仍处于开启状态。`)
+      } else {
+        setBleMessage(`重新连接 ${displayName} 失败：未知错误。请确认设备仍在附近、蓝牙已开启，并且心率广播仍处于开启状态。`)
       }
     }
   }
@@ -552,6 +639,7 @@ function App() {
     if (sourceMode === 'ble') {
       setBleStatus('idle')
       setBleDeviceName('')
+      setHasBleReconnectDevice(false)
       setBleMessage('尚未连接 BLE 心率设备。请先开启 Windows 蓝牙，并确保心率设备正在广播标准心率服务。连接前心率将显示为 -- bpm。')
     }
 
@@ -805,6 +893,26 @@ function App() {
                     >
                       断开 BLE 连接
                     </button>
+                  ) : hasBleReconnectDevice ? (
+                    <>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={bleStatus === 'connecting'}
+                        onClick={handleReconnectBleDevice}
+                      >
+                        {bleStatus === 'connecting' ? '正在重连...' : '重新连接上次设备'}
+                      </button>
+
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={bleStatus === 'connecting'}
+                        onClick={handleConnectBleDevice}
+                      >
+                        选择其他心率设备
+                      </button>
+                    </>
                   ) : (
                     <button
                       className="secondary-button"
