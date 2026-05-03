@@ -206,9 +206,9 @@ select {
 
 .settings-panel {
   display: grid;
-  max-height: calc(100vh - 158px);
+  max-height: calc(100vh - 168px);
   gap: 10px;
-  padding: 14px;
+  padding: 14px 14px 42px;
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid rgba(148, 163, 184, 0.14);
@@ -240,6 +240,12 @@ select {
 .settings-panel::-webkit-scrollbar-thumb:hover {
   background: rgba(203, 213, 225, 0.72);
   background-clip: content-box;
+}
+
+.settings-panel::after {
+  content: "";
+  display: block;
+  height: 6px;
 }
 
 .settings-panel label {
@@ -486,6 +492,97 @@ select {
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
+
+.resize-handle {
+  position: absolute;
+  right: 11px;
+  bottom: 11px;
+  z-index: 8;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, transparent 0 50%, rgba(56, 189, 248, 0.18) 50%),
+    rgba(15, 23, 42, 0.42);
+  cursor: nwse-resize;
+  opacity: 0.9;
+  box-shadow:
+    inset 0 0 0 1px rgba(125, 211, 252, 0.28),
+    0 0 14px rgba(56, 189, 248, 0.12);
+  transition:
+    opacity 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.resize-handle::before,
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, transparent 0 56%, rgba(224, 242, 254, 0.96) 56% 64%, transparent 64%),
+    linear-gradient(135deg, transparent 0 76%, rgba(125, 211, 252, 0.86) 76% 84%, transparent 84%);
+}
+
+.resize-handle::after {
+  right: 8px;
+  bottom: 8px;
+  width: 8px;
+  height: 8px;
+  opacity: 0.9;
+}
+
+.resize-handle-label {
+  position: absolute;
+  right: 29px;
+  bottom: 0;
+  width: max-content;
+  padding: 4px 7px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 999px;
+  color: rgba(224, 242, 254, 0.92);
+  background: rgba(15, 23, 42, 0.94);
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(4px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.resize-handle:hover {
+  opacity: 1;
+  background:
+    linear-gradient(135deg, transparent 0 48%, rgba(56, 189, 248, 0.28) 48%),
+    rgba(15, 23, 42, 0.68);
+  box-shadow:
+    inset 0 0 0 1px rgba(186, 230, 253, 0.56),
+    0 0 0 3px rgba(56, 189, 248, 0.12),
+    0 0 20px rgba(56, 189, 248, 0.24);
+}
+
+.resize-handle:hover .resize-handle-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.resize-handle:active {
+  transform: scale(0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(186, 230, 253, 0.7),
+    0 0 0 4px rgba(56, 189, 248, 0.16),
+    inset 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
 .source-panel {
   display: grid;
   gap: 8px;
@@ -556,6 +653,7 @@ select {
 
 .reset-button {
   margin-top: 4px;
+  margin-bottom: 8px;
 }
 
 .click-through-status,

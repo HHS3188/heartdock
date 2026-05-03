@@ -150,6 +150,12 @@ function App() {
   })
 
   const pureDragMovedRef = useRef(false)
+  const windowResizeStateRef = useRef({
+    isResizing: false,
+    startScreenX: 0,
+    startScreenY: 0,
+    startBounds: null as HeartDockWindowBounds | null
+  })
 
   const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
@@ -375,6 +381,58 @@ function App() {
       window.setTimeout(() => {
         pureDragMovedRef.current = false
       }, 180)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }
+
+  const handleWindowResizeMouseDown = async (
+    event: ReactMouseEvent<HTMLButtonElement>
+  ): Promise<void> => {
+    if (event.button !== 0 || isPureDisplay) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const bounds = await window.heartdock.getWindowBounds()
+
+    if (!bounds) {
+      return
+    }
+
+    windowResizeStateRef.current = {
+      isResizing: true,
+      startScreenX: event.screenX,
+      startScreenY: event.screenY,
+      startBounds: bounds
+    }
+
+    const handleMouseMove = (moveEvent: MouseEvent): void => {
+      const resizeState = windowResizeStateRef.current
+
+      if (!resizeState.isResizing || !resizeState.startBounds) {
+        return
+      }
+
+      const deltaX = moveEvent.screenX - resizeState.startScreenX
+      const deltaY = moveEvent.screenY - resizeState.startScreenY
+
+      const nextBounds: HeartDockWindowBounds = {
+        ...resizeState.startBounds,
+        width: resizeState.startBounds.width + deltaX,
+        height: resizeState.startBounds.height + deltaY
+      }
+
+      void window.heartdock.setWindowBounds(nextBounds)
+    }
+
+    const handleMouseUp = (): void => {
+      windowResizeStateRef.current.isResizing = false
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
     }
 
     window.addEventListener('mousemove', handleMouseMove)
@@ -793,15 +851,6 @@ function App() {
 
             <div className="window-actions no-drag">
               <button
-                className="icon-button"
-                type="button"
-                title="显示或隐藏设置"
-                onClick={() => updateConfig('showSettings', !config.showSettings)}
-              >
-                ⚙
-              </button>
-
-              <button
                 className="icon-button close-button"
                 type="button"
                 title="关闭 HeartDock"
@@ -957,7 +1006,7 @@ function App() {
               </div>
 
               <p className="hint">
-                纯享模式下可以按住心率本体拖动位置，双击心率区域退出纯享模式。
+                纯享模式下可以按住心率本体拖动位置，双击心率区域退出纯享模式。设置页面右下角的斜纹手柄可以拖动调整窗口大小。
               </p>
 
               <label>
@@ -988,7 +1037,7 @@ function App() {
               </label>
 
               <label>
-                刷新间隔 ms
+                模拟心率刷新间隔 ms
                 <input
                   type="number"
                   min="250"
@@ -1002,16 +1051,16 @@ function App() {
               </label>
 
               <p className="hint">
-                背景透明度会在隐藏设置面板后生效。设置面板打开时会使用不透明背景，避免桌面内容透出影响可读性。
+                刷新间隔只影响模拟心率模式；手动输入和 BLE 实时心率不按这个间隔刷新。
               </p>
 
               <div className="click-through-status">
-                <span>点击穿透</span>
+                <span>鼠标穿透交互</span>
                 <strong>{config.clickThrough ? '已开启' : '已关闭'}</strong>
               </div>
 
               <p className="hint">
-                点击穿透开启后，鼠标会穿过悬浮窗，无法直接点击此窗口。请使用 Ctrl + Shift + H 开启或关闭点击穿透。
+                开启后，鼠标点击会穿过 HeartDock，直接操作下方窗口；需要再次操作 HeartDock 时，请按 Ctrl + Shift + H 关闭。
               </p>
 
               <button className="reset-button" type="button" onClick={handleResetConfig}>
@@ -1019,6 +1068,15 @@ function App() {
               </button>
             </div>
           )}
+          <button
+            className="resize-handle no-drag"
+            type="button"
+            aria-label="拖动调整窗口大小"
+            title="拖动调整窗口大小"
+            onMouseDown={(event) => void handleWindowResizeMouseDown(event)}
+          >
+            <span className="resize-handle-label">调整大小</span>
+          </button>
         </section>
       )}
     </main>
