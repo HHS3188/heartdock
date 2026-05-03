@@ -1,38 +1,167 @@
-# Roadmap
+# 开发路线图
 
-## v0.1.0 — GitHub starter and mock overlay
+本文记录 HeartDock 的阶段目标、当前进度和后续计划。
 
-- [x] Project structure
-- [x] Transparent overlay window
-- [x] Mock heart rate source
-- [x] Basic style settings
-- [x] Documentation
-- [x] GitHub workflow
+HeartDock 当前处于早期预发布阶段。当前重点是先把 Windows 桌面心率悬浮窗、标准 BLE 心率读取、纯享显示模式和基础开发流程打磨稳定，再逐步考虑安装包、目标窗口跟随和更完整的用户体验。
 
-## v0.2.0 — Standard BLE heart rate support
+---
 
-- [ ] Scan BLE devices
-- [ ] Connect to standard heart rate devices
-- [ ] Subscribe to heart rate measurement values
-- [ ] Handle disconnect and reconnect
+## 当前状态
 
-## v0.3.0 — Mi Band research
+当前最新版本：**v0.1.9**
 
-- [ ] Document supported Mi Band models
-- [ ] Research authentication key workflow
-- [ ] Add experimental Mi Band adapter
-- [ ] Add clear setup guide
+当前已经完成：
 
-## v0.4.0 — Target-window follow mode
+- GitHub 项目基础结构
+- Electron 桌面悬浮窗
+- 模拟心率数据源
+- 手动输入心率数据源
+- 实验性标准 BLE 心率数据源
+- BLE 心率实时显示
+- BLE 空状态显示
+- BLE 断线后快速重连入口
+- 中文设置界面
+- 主题预设
+- 字体大小和刷新间隔设置
+- 点击穿透
+- 纯享心率显示模式
+- 纯享模式下拖动心率位置
+- 窗口位置保存
+- README 和 docs 文档整理
+- GitHub Issue / PR / Release 基础流程
 
-- [ ] List visible windows
-- [ ] Select target window
-- [ ] Follow target window position
-- [ ] Auto-hide when target window is minimized
+---
 
-## v1.0.0 — Stable release
+## v0.1.x — 起步版本和核心体验
 
-- [ ] Windows installer
-- [ ] Theme presets
-- [ ] Full user guide
-- [ ] Release notes
+状态：进行中，已发布到 v0.1.9。
+
+目标是完成 HeartDock 的最小可用版本，让它能作为一个桌面心率悬浮窗正常运行。
+
+已完成：
+
+- [x] 项目结构
+- [x] 透明悬浮窗
+- [x] 始终置顶
+- [x] 模拟心率
+- [x] 手动输入心率
+- [x] 主题预设
+- [x] 字体大小设置
+- [x] 刷新间隔设置
+- [x] 点击穿透
+- [x] 窗口位置保存
+- [x] 纯享心率显示模式
+- [x] 纯享模式拖动位置
+- [x] 标准 BLE 心率服务读取
+- [x] BLE 未连接时显示 `-- bpm`
+- [x] BLE 断线后快速重连入口
+- [x] 开发文档和 Electron 注意事项文档
+
+待继续优化：
+
+- [ ] 继续观察 BLE 连接稳定性
+- [ ] 优化 BLE 失败提示和边界状态
+- [ ] 根据实际使用反馈微调纯享模式交互
+- [ ] 整理正式打包前的配置
+
+---
+
+## v0.2.0 — 标准 BLE 心率支持增强
+
+目标是让标准 BLE Heart Rate Service 的使用体验更稳定。
+
+计划内容：
+
+- [x] 扫描支持 Heart Rate Service 的 BLE 设备
+- [x] 连接标准 BLE 心率设备
+- [x] 订阅 Heart Rate Measurement 通知
+- [x] 显示实时心率
+- [x] 处理断开状态
+- [x] 支持同一运行会话内快速重连上次设备
+- [ ] 优化断线提示和重连失败提示
+- [ ] 研究是否需要更明确的设备兼容性说明
+- [ ] 补充 BLE 使用说明文档
+- [ ] 评估后台自动重连是否值得实现
+
+说明：
+
+当前 BLE 功能以标准 BLE Heart Rate Service 为主，不处理厂商私有协议、认证密钥或专有命令。
+
+---
+
+## v0.3.0 — 显示体验和窗口交互增强
+
+目标是继续优化悬浮显示、纯享模式和窗口交互体验。
+
+计划内容：
+
+- [ ] 研究设置窗口自定义缩放手柄
+- [ ] 优化透明窗口在不同 DPI 下的显示效果
+- [ ] 优化纯享模式的鼠标命中区域
+- [ ] 增加更多主题预设
+- [ ] 增加颜色区间自定义能力
+- [ ] 增加配置重置和导入导出能力
+- [ ] 补充完整用户使用说明
+
+---
+
+## v0.4.0 — 目标窗口跟随模式
+
+目标是让 HeartDock 可以跟随指定窗口位置，适合直播、录屏或固定叠加场景。
+
+计划内容：
+
+- [ ] 列出可见窗口
+- [ ] 选择目标窗口
+- [ ] 跟随目标窗口移动
+- [ ] 目标窗口最小化时自动隐藏
+- [ ] 目标窗口关闭后提示用户重新选择
+- [ ] 研究不同 Windows 环境下的兼容性
+
+---
+
+## v0.5.0 — 打包和发布体验
+
+目标是让普通用户不需要 Node.js/npm，也能直接安装和使用 HeartDock。
+
+计划内容：
+
+- [ ] 配置 electron-builder
+- [ ] 生成 Windows 安装包
+- [ ] 生成便携版或安装版方案评估
+- [ ] 优化安装包体积
+- [ ] 在 GitHub Release 上传安装包
+- [ ] 补充普通用户安装说明
+- [ ] 补充开发者从源码运行说明和普通用户安装说明的区别
+
+---
+
+## v1.0.0 — 稳定 Windows 发布版
+
+目标是发布一个相对稳定的 Windows 桌面心率悬浮窗版本。
+
+计划内容：
+
+- [ ] 标准 BLE 心率读取稳定
+- [ ] 常用设备兼容性说明清晰
+- [ ] 纯享模式稳定
+- [ ] 点击穿透和窗口状态稳定
+- [ ] Windows 安装包可用
+- [ ] 用户说明文档完整
+- [ ] 已知限制说明清楚
+- [ ] Release notes 完整
+
+---
+
+## 暂不优先处理的方向
+
+以下内容暂时不作为近期重点：
+
+- 小米手环私有协议适配
+- 厂商私有认证密钥流程
+- 跨平台 macOS / Linux 支持
+- 自动更新
+- 云端同步
+- 用户账号系统
+
+这些方向不是完全放弃，而是当前阶段优先级低于标准 BLE、Windows 悬浮窗体验和安装包发布。
