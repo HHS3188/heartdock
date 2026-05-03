@@ -4,20 +4,11 @@ export interface ColorRule {
   color: string
 }
 
-export type ThemePresetId = 'default' | 'transparent' | 'highContrast' | 'streamer'
 export type HeartRateSourceMode = 'mock' | 'manual' | 'ble'
-
-export interface ThemePreset {
-  id: ThemePresetId
-  name: string
-  description: string
-  fontSize: number
-  backgroundOpacity: number
-  colorRules: ColorRule[]
-}
+export type HeartRateColorMode = 'range' | 'fixed'
+export type DisplayGlowLevel = 'off' | 'soft' | 'medium' | 'strong'
 
 export interface HeartDockConfig {
-  themePresetId: ThemePresetId
   heartRateSourceMode: HeartRateSourceMode
   mockPaused: boolean
   manualBpm: number
@@ -28,62 +19,15 @@ export interface HeartDockConfig {
   clickThrough: boolean
   showSettings: boolean
   pureDisplay: boolean
+  prefixText: string
+  unitText: string
+  colorMode: HeartRateColorMode
+  fixedColor: string
+  glowLevel: DisplayGlowLevel
   colorRules: ColorRule[]
 }
 
-export const themePresets: ThemePreset[] = [
-  {
-    id: 'default',
-    name: '默认主题',
-    description: '适合日常桌面显示的基础主题。',
-    fontSize: 64,
-    backgroundOpacity: 0.24,
-    colorRules: [
-      { min: 0, max: 90, color: '#4ade80' },
-      { min: 91, max: 120, color: '#facc15' },
-      { min: 121, max: 240, color: '#fb7185' }
-    ]
-  },
-  {
-    id: 'transparent',
-    name: '透明主题',
-    description: '更轻量的透明显示效果，适合覆盖在窗口上。',
-    fontSize: 64,
-    backgroundOpacity: 0.08,
-    colorRules: [
-      { min: 0, max: 90, color: '#93c5fd' },
-      { min: 91, max: 120, color: '#fde68a' },
-      { min: 121, max: 240, color: '#fda4af' }
-    ]
-  },
-  {
-    id: 'highContrast',
-    name: '高对比度主题',
-    description: '更强的对比度，适合复杂背景或远距离观看。',
-    fontSize: 72,
-    backgroundOpacity: 0.68,
-    colorRules: [
-      { min: 0, max: 90, color: '#22c55e' },
-      { min: 91, max: 120, color: '#eab308' },
-      { min: 121, max: 240, color: '#ef4444' }
-    ]
-  },
-  {
-    id: 'streamer',
-    name: '直播醒目主题',
-    description: '更大的数字和更明显的颜色，适合直播/录制画面。',
-    fontSize: 84,
-    backgroundOpacity: 0.36,
-    colorRules: [
-      { min: 0, max: 90, color: '#38bdf8' },
-      { min: 91, max: 120, color: '#facc15' },
-      { min: 121, max: 240, color: '#fb7185' }
-    ]
-  }
-]
-
 export const defaultConfig: HeartDockConfig = {
-  themePresetId: 'default',
   heartRateSourceMode: 'mock',
   mockPaused: false,
   manualBpm: 78,
@@ -94,30 +38,19 @@ export const defaultConfig: HeartDockConfig = {
   clickThrough: false,
   showSettings: true,
   pureDisplay: false,
+  prefixText: '♥',
+  unitText: 'bpm',
+  colorMode: 'range',
+  fixedColor: '#4ade80',
+  glowLevel: 'medium',
   colorRules: [
-    { min: 0, max: 90, color: '#4ade80' },
+    { min: 30, max: 90, color: '#4ade80' },
     { min: 91, max: 120, color: '#facc15' },
     { min: 121, max: 240, color: '#fb7185' }
   ]
 }
 
 const CONFIG_KEY = 'heartdock.config.v1'
-
-export function getThemePreset(id: ThemePresetId): ThemePreset {
-  return themePresets.find((theme) => theme.id === id) ?? themePresets[0]
-}
-
-export function applyThemePreset(config: HeartDockConfig, themeId: ThemePresetId): HeartDockConfig {
-  const theme = getThemePreset(themeId)
-
-  return {
-    ...config,
-    themePresetId: theme.id,
-    fontSize: theme.fontSize,
-    backgroundOpacity: theme.backgroundOpacity,
-    colorRules: theme.colorRules
-  }
-}
 
 export function normalizeBpm(value: number): number {
   if (!Number.isFinite(value)) {
@@ -135,6 +68,60 @@ export function normalizeRefreshIntervalMs(value: number): number {
   const roundedValue = Math.round(value / 250) * 250
 
   return Math.min(Math.max(roundedValue, 250), 10000)
+}
+
+export function normalizeDisplayText(value: unknown, fallback: string, maxLength = 8): string {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  return value.slice(0, maxLength)
+}
+
+export function normalizeColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback
+}
+
+export function normalizeColorMode(value: unknown): HeartRateColorMode {
+  return value === 'fixed' || value === 'range' ? value : defaultConfig.colorMode
+}
+
+export function normalizeGlowLevel(value: unknown): DisplayGlowLevel {
+  return value === 'off' || value === 'soft' || value === 'medium' || value === 'strong'
+    ? value
+    : defaultConfig.glowLevel
+}
+
+export function normalizeColorRules(value: unknown): ColorRule[] {
+  const fallbackRules = defaultConfig.colorRules
+
+  if (!Array.isArray(value)) {
+    return fallbackRules.map((rule) => ({ ...rule }))
+  }
+
+  return fallbackRules.map((fallbackRule, index) => {
+    const parsedRule = value[index] as Partial<ColorRule> | undefined
+    const rawMin =
+      typeof parsedRule?.min === 'number' && Number.isFinite(parsedRule.min)
+        ? Math.round(parsedRule.min)
+        : fallbackRule.min
+    const rawMax =
+      typeof parsedRule?.max === 'number' && Number.isFinite(parsedRule.max)
+        ? Math.round(parsedRule.max)
+        : fallbackRule.max
+    const min = Math.min(Math.max(rawMin, 30), 240)
+    const max = Math.min(Math.max(rawMax, min), 240)
+
+    return {
+      min,
+      max,
+      color: normalizeColor(parsedRule?.color, fallbackRule.color)
+    }
+  })
 }
 
 export function loadConfig(): HeartDockConfig {
@@ -157,7 +144,12 @@ export function loadConfig(): HeartDockConfig {
       clickThrough: Boolean(parsed.clickThrough ?? defaultConfig.clickThrough),
       showSettings: Boolean(parsed.showSettings ?? defaultConfig.showSettings),
       pureDisplay: Boolean(parsed.pureDisplay ?? defaultConfig.pureDisplay),
-      colorRules: parsed.colorRules ?? [...defaultConfig.colorRules]
+      prefixText: normalizeDisplayText(parsed.prefixText, defaultConfig.prefixText, 8),
+      unitText: normalizeDisplayText(parsed.unitText, defaultConfig.unitText, 8),
+      colorMode: normalizeColorMode(parsed.colorMode),
+      fixedColor: normalizeColor(parsed.fixedColor, defaultConfig.fixedColor),
+      glowLevel: normalizeGlowLevel(parsed.glowLevel),
+      colorRules: normalizeColorRules(parsed.colorRules)
     }
   } catch {
     return createDefaultConfig()
@@ -176,6 +168,11 @@ export function createDefaultConfig(): HeartDockConfig {
     clickThrough: defaultConfig.clickThrough,
     showSettings: defaultConfig.showSettings,
     pureDisplay: defaultConfig.pureDisplay,
-    colorRules: [...defaultConfig.colorRules]
+    prefixText: normalizeDisplayText(defaultConfig.prefixText, '♥', 8),
+    unitText: normalizeDisplayText(defaultConfig.unitText, 'bpm', 8),
+    colorMode: defaultConfig.colorMode,
+    fixedColor: normalizeColor(defaultConfig.fixedColor, '#4ade80'),
+    glowLevel: defaultConfig.glowLevel,
+    colorRules: normalizeColorRules(defaultConfig.colorRules)
   }
 }

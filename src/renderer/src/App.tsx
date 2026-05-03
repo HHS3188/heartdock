@@ -9,20 +9,58 @@ import {
 } from 'react'
 
 import {
+  DisplayGlowLevel,
   HeartDockConfig,
+  HeartRateColorMode,
   HeartRateSourceMode,
-  ThemePresetId,
-  applyThemePreset,
   createDefaultConfig,
   loadConfig,
   normalizeBpm,
+  normalizeColor,
+  normalizeDisplayText,
   normalizeRefreshIntervalMs,
-  saveConfig,
-  themePresets
+  saveConfig
 } from './config'
 import { MockHeartRateSource } from './core/MockHeartRateSource'
 
 type BleConnectionStatus = 'idle' | 'connecting' | 'connected' | 'failed'
+
+const colorPresetOptions = [
+  '#4ade80',
+  '#22c55e',
+  '#38bdf8',
+  '#60a5fa',
+  '#a78bfa',
+  '#facc15',
+  '#fb923c',
+  '#fb7185',
+  '#ef4444',
+  '#f8fafc'
+]
+
+interface SelectOption<T extends string> {
+  value: T
+  label: string
+  description?: string
+}
+
+const sourceModeOptions: Array<SelectOption<HeartRateSourceMode>> = [
+  { value: 'mock', label: '模拟心率', description: '自动生成心率，适合测试样式。' },
+  { value: 'manual', label: '手动输入', description: '固定显示指定 BPM。' },
+  { value: 'ble', label: 'BLE 心率设备（实验）', description: '读取标准 BLE 心率服务。' }
+]
+
+const colorModeOptions: Array<SelectOption<HeartRateColorMode>> = [
+  { value: 'range', label: '跟随心率区间', description: '不同心率区间显示不同颜色。' },
+  { value: 'fixed', label: '固定颜色', description: '始终使用同一种颜色。' }
+]
+
+const glowLevelOptions: Array<SelectOption<DisplayGlowLevel>> = [
+  { value: 'off', label: '关闭', description: '不显示发光效果。' },
+  { value: 'soft', label: '弱', description: '轻微发光。' },
+  { value: 'medium', label: '中', description: '默认发光强度。' },
+  { value: 'strong', label: '强', description: '更醒目的发光效果。' }
+]
 
 interface BleCharacteristic {
   value?: DataView
@@ -61,20 +99,24 @@ interface NavigatorWithBluetooth extends Navigator {
 }
 
 function getColorForBpm(bpm: number, config: HeartDockConfig): string {
+  if (config.colorMode === 'fixed') {
+    return config.fixedColor
+  }
+
   const rule = config.colorRules.find((item) => bpm >= item.min && bpm <= item.max)
   return rule?.color ?? '#ffffff'
 }
 
-function getSourceLabel(sourceMode: HeartRateSourceMode): string {
-  if (sourceMode === 'manual') {
-    return '手动'
+function clampColorRuleValue(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 30
   }
 
-  if (sourceMode === 'ble') {
-    return 'BLE'
-  }
+  return Math.min(Math.max(Math.round(value), 30), 240)
+}
 
-  return '模拟'
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }
 
 function parseHeartRateMeasurement(value: DataView): number | null {
@@ -172,6 +214,10 @@ function App() {
     '尚未连接 BLE 心率设备。请先开启 Windows 蓝牙，并确保心率设备正在广播标准心率服务。连接前心率将显示为 -- bpm。'
   )
 
+  const [openColorRuleIndexes, setOpenColorRuleIndexes] = useState<number[]>([])
+
+  const [openSelectId, setOpenSelectId] = useState<string | null>(null)
+
   const shouldShowBlePlaceholder =
     config.heartRateSourceMode === 'ble' && bleStatus !== 'connected'
 
@@ -181,11 +227,8 @@ function App() {
     () => (shouldShowBlePlaceholder ? '#94a3b8' : getColorForBpm(bpm, config)),
     [bpm, config, shouldShowBlePlaceholder]
   )
-  const currentTheme = useMemo(
-    () => themePresets.find((theme) => theme.id === config.themePresetId) ?? themePresets[0],
-    [config.themePresetId]
-  )
   const isPureDisplay = config.pureDisplay
+  const displayGlowClass = `glow-${config.glowLevel}`
 
   useEffect(() => {
     sourceModeRef.current = config.heartRateSourceMode
@@ -289,9 +332,279 @@ function App() {
     setConfig((current) => ({ ...current, [key]: value }))
   }
 
-  const handleThemeChange = (themeId: ThemePresetId): void => {
-    setConfig((current) => applyThemePreset(current, themeId))
+  const handlePrefixTextChange = (value: string): void => {
+    updateConfig('prefixText', normalizeDisplayText(value, '', 8))
   }
+
+  const handleUnitTextChange = (value: string): void => {
+    updateConfig('unitText', normalizeDisplayText(value, '', 8))
+  }
+
+  const handleFixedColorChange = (value: string): void => {
+    updateConfig('fixedColor', normalizeColor(value, config.fixedColor))
+  }
+
+  const handleColorRuleColorChange = (index: number, color: string): void => {
+    setConfig((current) => ({
+      ...current,
+      colorRules: current.colorRules.map((rule, ruleIndex) =>
+        ruleIndex === index ? { ...rule, color: normalizeColor(color, rule.color) } : rule
+      )
+    }))
+  }
+
+  const handleColorRuleToggle = (index: number, isOpen: boolean): void => {
+    setOpenColorRuleIndexes((current) => {
+      if (isOpen) {
+        return current.includes(index) ? current : [...current, index]
+      }
+
+      return current.filter((item) => item !== index)
+    })
+  }
+
+  const updateColorRuleRange = (
+    index: number,
+    key: 'min' | 'max',
+    rawValue: number
+  ): void => {
+    if (!Number.isFinite(rawValue)) {
+      return
+    }
+
+    setConfig((current) => {
+      const nextRules = current.colorRules.map((rule) => ({ ...rule }))
+      const currentRule = nextRules[index]
+
+      if (!currentRule) {
+        return current
+      }
+
+      const nextValue = clampColorRuleValue(rawValue)
+
+      if (key === 'max') {
+        const remainingRuleCount = nextRules.length - index - 1
+        const maxLimit = 240 - remainingRuleCount
+
+        currentRule.max = clampNumber(nextValue, currentRule.min, maxLimit)
+
+        for (let ruleIndex = index + 1; ruleIndex < nextRules.length; ruleIndex++) {
+          const previousRule = nextRules[ruleIndex - 1]
+          const rule = nextRules[ruleIndex]
+          const remainingAfterThisRule = nextRules.length - ruleIndex - 1
+          const maxForThisRule = 240 - remainingAfterThisRule
+
+          rule.min = clampNumber(previousRule.max + 1, 30, maxForThisRule)
+          rule.max = clampNumber(Math.max(rule.max, rule.min), rule.min, maxForThisRule)
+        }
+      } else {
+        const previousRuleCount = index
+        const minLimit = 30 + previousRuleCount
+
+        currentRule.min = clampNumber(nextValue, minLimit, currentRule.max)
+
+        for (let ruleIndex = index - 1; ruleIndex >= 0; ruleIndex--) {
+          const nextRule = nextRules[ruleIndex + 1]
+          const rule = nextRules[ruleIndex]
+          const minForThisRule = 30 + ruleIndex
+
+          rule.max = clampNumber(nextRule.min - 1, minForThisRule, 240)
+          rule.min = clampNumber(Math.min(rule.min, rule.max), minForThisRule, rule.max)
+        }
+      }
+
+      return {
+        ...current,
+        colorRules: nextRules
+      }
+    })
+  }
+
+  const handleColorRuleRangeChange = (
+    index: number,
+    key: 'min' | 'max',
+    value: string
+  ): void => {
+    if (!value.trim()) {
+      return
+    }
+
+    updateColorRuleRange(index, key, Number(value))
+  }
+
+  const handleColorRuleRangeStep = (index: number, key: 'min' | 'max', delta: number): void => {
+    const rule = config.colorRules[index]
+
+    if (!rule) {
+      return
+    }
+
+    const currentValue = key === 'min' ? rule.min : rule.max
+    updateColorRuleRange(index, key, currentValue + delta)
+  }
+
+  const renderCustomSelect = <T extends string>(
+    id: string,
+    value: T,
+    options: Array<SelectOption<T>>,
+    onChange: (value: T) => void,
+    ariaLabel: string
+  ) => {
+    const selectedOption = options.find((option) => option.value === value) ?? options[0]
+    const isOpen = openSelectId === id
+
+    return (
+      <div className={`custom-select ${isOpen ? 'is-open' : ''}`} onClick={(event) => event.stopPropagation()}>
+        <button
+          className="custom-select-trigger"
+          type="button"
+          aria-label={ariaLabel}
+          aria-expanded={isOpen}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            setOpenSelectId((current) => (current === id ? null : id))
+          }}
+        >
+          <span className="custom-select-value">{selectedOption.label}</span>
+          <span className="custom-select-chevron" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+
+        {isOpen && (
+          <div className="custom-select-menu" role="listbox">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                className={`custom-select-option ${option.value === value ? 'is-selected' : ''}`}
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onChange(option.value)
+                  setOpenSelectId(null)
+                }}
+              >
+                <span>{option.label}</span>
+                {option.description && <small>{option.description}</small>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderRangeControl = (
+    value: number,
+    onInputChange: (value: string) => void,
+    onStep: (delta: number) => void,
+    ariaLabel: string
+  ) => (
+    <div className="range-field" aria-label={ariaLabel} onClick={(event) => event.stopPropagation()}>
+      <input
+        className="range-value-input"
+        type="text"
+        inputMode="numeric"
+        value={value}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => {
+          const nextValue = event.target.value.trim()
+
+          if (/^\d{0,3}$/.test(nextValue)) {
+            onInputChange(nextValue)
+          }
+        }}
+        onBlur={(event) => onInputChange(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.currentTarget.blur()
+          }
+        }}
+      />
+
+      <div className="range-action-row">
+        <button
+          className="range-action-button"
+          type="button"
+          aria-label="减少 1"
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onStep(-1)
+          }}
+        >
+          −1
+        </button>
+
+        <button
+          className="range-action-button"
+          type="button"
+          aria-label="增加 1"
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onStep(1)
+          }}
+        >
+          +1
+        </button>
+      </div>
+    </div>
+  )
+
+  const renderColorControl = (
+    color: string,
+    onChange: (color: string) => void,
+    ariaLabel: string
+  ) => (
+    <div className="custom-color-control" aria-label={ariaLabel} onClick={(event) => event.stopPropagation()}>
+      <div className="color-preview-card">
+        <span className="color-preview" style={{ backgroundColor: color }} />
+        <div className="hex-input-wrap">
+          <input
+            key={color}
+            className="hex-color-input"
+            type="text"
+            defaultValue={color}
+            maxLength={7}
+            spellCheck={false}
+            onBlur={(event) => onChange(normalizeColor(event.currentTarget.value.trim(), color))}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur()
+              }
+            }}
+          />
+          <small>可手动输入 RGB 16 进制颜色码，例如 #4ade80。</small>
+        </div>
+      </div>
+
+      <div className="color-swatch-grid" aria-label="预设颜色">
+        {colorPresetOptions.map((presetColor) => (
+          <button
+            key={presetColor}
+            className={`color-swatch-button ${presetColor.toLowerCase() === color.toLowerCase() ? 'is-active' : ''}`}
+            type="button"
+            aria-label={`选择颜色 ${presetColor}`}
+            title={presetColor}
+            style={{ backgroundColor: presetColor }}
+            onClick={() => onChange(presetColor)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+
 
   const handleTogglePureDisplay = async (): Promise<void> => {
     if (!config.pureDisplay) {
@@ -817,7 +1130,7 @@ function App() {
         <section className="pure-display-view no-drag">
           <div
             ref={pureHeartRef}
-            className="pure-heart-row"
+            className={`pure-heart-row heart-display-row ${displayGlowClass}`}
             title="按住拖动位置，双击退出纯享模式"
             onMouseDown={handlePureDisplayMouseDown}
             onDoubleClick={handlePureDisplayDoubleClick}
@@ -828,13 +1141,15 @@ function App() {
               }
             }}
           >
-            <span className="heart pure-heart" style={{ color: bpmColor }}>
-              ♥
-            </span>
+            {config.prefixText && (
+              <span className="heart prefix-text pure-heart" style={{ color: bpmColor }}>
+                {config.prefixText}
+              </span>
+            )}
             <span className="bpm pure-bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
               {displayBpm}
             </span>
-            <span className="unit pure-unit">bpm</span>
+            {config.unitText && <span className="unit pure-unit">{config.unitText}</span>}
           </div>
         </section>
       ) : (
@@ -847,7 +1162,10 @@ function App() {
           }}
         >
           <div className="top-row">
-            <span className="badge">{getSourceLabel(config.heartRateSourceMode)}</span>
+            <span className="badge brand-badge">
+              <span className="brand-mark">♥</span>
+              <span>HeartDock</span>
+            </span>
 
             <div className="window-actions no-drag">
               <button
@@ -861,29 +1179,30 @@ function App() {
             </div>
           </div>
 
-          <div className="heart-row">
-            <span className="heart" style={{ color: bpmColor }}>
-              ♥
-            </span>
+          <div className={`heart-row heart-display-row ${displayGlowClass}`}>
+            {config.prefixText && (
+              <span className="heart prefix-text" style={{ color: bpmColor }}>
+                {config.prefixText}
+              </span>
+            )}
             <span className="bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
               {displayBpm}
             </span>
-            <span className="unit">bpm</span>
+            {config.unitText && <span className="unit">{config.unitText}</span>}
           </div>
 
           {config.showSettings && (
             <div className="settings-panel no-drag">
-              <label>
-                数据源
-                <select
-                  value={config.heartRateSourceMode}
-                  onChange={(event) => handleSourceModeChange(event.target.value as HeartRateSourceMode)}
-                >
-                  <option value="mock">模拟心率</option>
-                  <option value="manual">手动输入</option>
-                  <option value="ble">BLE 心率设备（实验）</option>
-                </select>
-              </label>
+              <div className="setting-field">
+                <span className="field-label">数据源</span>
+                {renderCustomSelect(
+                  'source-mode',
+                  config.heartRateSourceMode,
+                  sourceModeOptions,
+                  handleSourceModeChange,
+                  '选择心率数据源'
+                )}
+              </div>
 
               {config.heartRateSourceMode === 'mock' && (
                 <div className="source-panel">
@@ -1009,21 +1328,128 @@ function App() {
                 纯享模式下可以按住心率本体拖动位置，双击心率区域退出纯享模式。设置页面右下角的斜纹手柄可以拖动调整窗口大小。
               </p>
 
-              <label>
-                主题预设
-                <select
-                  value={config.themePresetId}
-                  onChange={(event) => handleThemeChange(event.target.value as ThemePresetId)}
-                >
-                  {themePresets.map((theme) => (
-                    <option key={theme.id} value={theme.id}>
-                      {theme.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="settings-section">
+                <div className="section-heading">
+                  <span>显示样式</span>
+                  <small>自定义心率前缀、单位、颜色和发光效果。</small>
+                </div>
 
-              <p className="hint">{currentTheme.description}</p>
+                <label>
+                  前缀标识
+                  <input
+                    type="text"
+                    maxLength={8}
+                    value={config.prefixText}
+                    placeholder="例如 ♥ / HR / 心率"
+                    onChange={(event) => handlePrefixTextChange(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  单位文字
+                  <input
+                    type="text"
+                    maxLength={8}
+                    value={config.unitText}
+                    placeholder="例如 bpm / BPM / 次/分"
+                    onChange={(event) => handleUnitTextChange(event.target.value)}
+                  />
+                </label>
+
+                <div className="setting-field">
+                  <span className="field-label">颜色模式</span>
+                  {renderCustomSelect(
+                    'color-mode',
+                    config.colorMode,
+                    colorModeOptions,
+                    (value) => updateConfig('colorMode', value),
+                    '选择心率颜色模式'
+                  )}
+                </div>
+
+                {config.colorMode === 'fixed' && (
+                  <div className="setting-field">
+                    <span className="field-label">固定颜色</span>
+                    <details className="color-editor-details">
+                      <summary>
+                        <span className="summary-color-dot" style={{ backgroundColor: config.fixedColor }} />
+                        <span>{config.fixedColor}</span>
+                        <span className="summary-hint">展开编辑</span>
+                      </summary>
+                      {renderColorControl(config.fixedColor, handleFixedColorChange, '固定心率颜色')}
+                    </details>
+                  </div>
+                )}
+
+                <div className="setting-field">
+                  <span className="field-label">发光强度</span>
+                  {renderCustomSelect(
+                    'glow-level',
+                    config.glowLevel,
+                    glowLevelOptions,
+                    (value) => updateConfig('glowLevel', value),
+                    '选择心率发光强度'
+                  )}
+                </div>
+
+                <div className="color-rules-editor">
+                  <div className="color-rules-header">
+                    <span className="color-rules-title">区间颜色规则</span>
+                    <small>范围限制为 30 - 240 bpm，点击每段可展开编辑。</small>
+                  </div>
+
+                  {config.colorRules.map((rule, index) => (
+                    <details
+                      key={`color-rule-${index}`}
+                      className="color-rule-card"
+                      open={openColorRuleIndexes.includes(index)}
+                      onToggle={(event) => handleColorRuleToggle(index, event.currentTarget.open)}
+                    >
+                      <summary>
+                        <span className="summary-color-dot" style={{ backgroundColor: rule.color }} />
+                        <span>
+                          {rule.min} - {rule.max} bpm
+                        </span>
+                        <span className="summary-hex">{rule.color}</span>
+                      </summary>
+
+                      <div className="color-rule-card-body">
+                        <div className="color-rule-range-inputs">
+                          <label>
+                            下限
+                            {renderRangeControl(
+                              rule.min,
+                              (value) => handleColorRuleRangeChange(index, 'min', value),
+                              (delta) => handleColorRuleRangeStep(index, 'min', delta),
+                              `${rule.min} 到 ${rule.max} bpm 的下限`
+                            )}
+                          </label>
+
+                          <label>
+                            上限
+                            {renderRangeControl(
+                              rule.max,
+                              (value) => handleColorRuleRangeChange(index, 'max', value),
+                              (delta) => handleColorRuleRangeStep(index, 'max', delta),
+                              `${rule.min} 到 ${rule.max} bpm 的上限`
+                            )}
+                          </label>
+                        </div>
+
+                        {renderColorControl(
+                          rule.color,
+                          (color) => handleColorRuleColorChange(index, color),
+                          `${rule.min} 到 ${rule.max} bpm 区间颜色`
+                        )}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+
+                <p className="hint">
+                  区间范围和颜色只在“跟随心率区间”模式下生效；固定颜色模式会始终使用同一种颜色。
+                </p>
+              </div>
 
               <label>
                 字体大小

@@ -32,8 +32,8 @@ const DEFAULT_WINDOW_STATE: WindowState = {
 }
 
 const MAX_WINDOW_STATE: WindowState = {
-  width: 1100,
-  height: 720
+  width: 1180,
+  height: 900
 }
 
 function getWindowStatePath(): string {
