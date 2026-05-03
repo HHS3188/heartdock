@@ -31,6 +31,11 @@ const DEFAULT_WINDOW_STATE: WindowState = {
   height: 560
 }
 
+const MAX_WINDOW_STATE: WindowState = {
+  width: 1100,
+  height: 720
+}
+
 function getWindowStatePath(): string {
   return join(app.getPath('userData'), 'window-state.json')
 }
@@ -45,18 +50,26 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 
 function getNormalizedWindowSize(state: WindowState): Pick<WindowState, 'width' | 'height'> {
   const primaryWorkArea = screen.getPrimaryDisplay().workArea
+  const maxWindowWidth = Math.min(
+    MAX_WINDOW_STATE.width,
+    Math.max(MIN_WINDOW_STATE.width, primaryWorkArea.width)
+  )
+  const maxWindowHeight = Math.min(
+    MAX_WINDOW_STATE.height,
+    Math.max(MIN_WINDOW_STATE.height, primaryWorkArea.height)
+  )
 
   return {
     width: clampNumber(
       state.width,
       MIN_WINDOW_STATE.width,
-      Math.max(MIN_WINDOW_STATE.width, primaryWorkArea.width),
+      maxWindowWidth,
       DEFAULT_WINDOW_STATE.width
     ),
     height: clampNumber(
       state.height,
       MIN_WINDOW_STATE.height,
-      Math.max(MIN_WINDOW_STATE.height, primaryWorkArea.height),
+      maxWindowHeight,
       DEFAULT_WINDOW_STATE.height
     )
   }
@@ -270,11 +283,21 @@ function registerIpcHandlers(): void {
         return false
       }
 
+      const primaryWorkArea = screen.getPrimaryDisplay().workArea
+      const maxWindowWidth = Math.min(
+        MAX_WINDOW_STATE.width,
+        Math.max(MIN_WINDOW_STATE.width, primaryWorkArea.width)
+      )
+      const maxWindowHeight = Math.min(
+        MAX_WINDOW_STATE.height,
+        Math.max(MIN_WINDOW_STATE.height, primaryWorkArea.height)
+      )
+
       const nextBounds = {
         x: Math.round(bounds.x),
         y: Math.round(bounds.y),
-        width: Math.max(Math.round(bounds.width), MIN_WINDOW_STATE.width),
-        height: Math.max(Math.round(bounds.height), MIN_WINDOW_STATE.height)
+        width: clampNumber(bounds.width, MIN_WINDOW_STATE.width, maxWindowWidth, DEFAULT_WINDOW_STATE.width),
+        height: clampNumber(bounds.height, MIN_WINDOW_STATE.height, maxWindowHeight, DEFAULT_WINDOW_STATE.height)
       }
 
       overlayWindow.setBounds(nextBounds, false)
@@ -308,6 +331,8 @@ function createOverlayWindow(): void {
     y: windowState.y,
     minWidth: MIN_WINDOW_STATE.width,
     minHeight: MIN_WINDOW_STATE.height,
+    maxWidth: MAX_WINDOW_STATE.width,
+    maxHeight: MAX_WINDOW_STATE.height,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
