@@ -1,25 +1,102 @@
-# Overlay limitations
+# 悬浮窗限制说明
 
-HeartDock v0.1 uses a normal transparent always-on-top Electron window.
+HeartDock 使用 Electron 的透明置顶窗口来实现桌面心率悬浮显示。
 
-This is suitable for:
+这种方式适合大多数普通桌面场景，但不应该承诺可以覆盖所有程序，尤其是不应该承诺一定能覆盖独占全屏游戏或受保护渲染的窗口。
 
-- desktop overlay
-- normal application windows
-- maximized windows
-- many borderless fullscreen windows
+---
 
-It may not work reliably over:
+## 适合的场景
 
-- exclusive fullscreen games
-- applications that use protected rendering
-- apps with anti-cheat or anti-overlay systems
-- system-level secure desktops
+HeartDock 当前主要适合以下场景：
 
-## Project policy
+- Windows 桌面
+- 普通应用窗口
+- 最大化窗口
+- 多数无边框全屏窗口
+- 直播画面叠加
+- 录屏画面叠加
+- 日常桌面心率观察
 
-HeartDock should not promise universal fullscreen overlay support.
+例如：
 
-Recommended wording:
+- 浏览器窗口
+- 编辑器窗口
+- 视频播放器普通窗口
+- 直播软件画面
+- 无边框窗口化运行的程序
 
-> HeartDock focuses on desktop, normal-window, and borderless-fullscreen overlay scenarios. Exclusive fullscreen support is experimental and not guaranteed.
+---
+
+## 不保证可用的场景
+
+以下场景可能无法稳定显示在最上层：
+
+- 独占全屏游戏
+- 使用受保护渲染的应用
+- 带有反作弊或反覆盖层机制的游戏
+- 系统级安全桌面
+- 权限级别高于 HeartDock 的管理员窗口
+- 特殊显卡驱动或硬件加速环境
+- 某些屏幕录制、投屏或虚拟桌面环境
+
+这些限制主要来自 Windows、Electron、显卡驱动和目标应用本身，并不完全由 HeartDock 控制。
+
+---
+
+## 当前项目策略
+
+HeartDock 当前不承诺“万能覆盖所有窗口”。
+
+推荐表述是：
+
+> HeartDock 主要面向桌面、普通窗口和无边框全屏窗口的心率悬浮显示场景。独占全屏支持属于实验性能力，不保证在所有应用中可用。
+
+---
+
+## 透明窗口相关限制
+
+为了实现纯享心率显示模式，HeartDock 使用透明无边框窗口。
+
+这种方式带来了一些取舍：
+
+- 透明窗口下原生缩放不够稳定
+- 点击穿透需要动态切换
+- 打开开发者工具时透明效果可能异常
+- 不同 Windows 版本、DPI、显卡驱动下表现可能不同
+
+因此当前阶段采用以下策略：
+
+- 设置窗口固定默认尺寸
+- 只保存窗口位置
+- 不保存异常窗口宽高
+- 纯享模式拖动只改变窗口位置
+- 点击穿透通过快捷键和程序逻辑动态切换
+
+更多 Electron 相关说明见：
+
+[Electron 开发注意事项](./electron-notes.md)
+
+---
+
+## 使用建议
+
+如果需要更稳定的悬浮显示，建议：
+
+- 优先使用普通窗口或无边框窗口化模式
+- 避免使用独占全屏
+- 如果悬浮窗没有显示在目标程序上方，尝试切换目标程序的显示模式
+- 如果开启点击穿透后无法点击窗口，使用 `Ctrl + Shift + H` 关闭点击穿透
+- 如果窗口位置异常，可以删除本地窗口状态文件或重置配置
+
+---
+
+## 后续可能优化
+
+后续可以继续研究：
+
+- 目标窗口跟随模式
+- 更精细的点击穿透区域控制
+- 自定义缩放手柄
+- 多显示器和高 DPI 场景优化
+- 更完整的用户排错说明
