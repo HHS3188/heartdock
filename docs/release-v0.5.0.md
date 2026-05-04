@@ -1,4 +1,4 @@
-# HeartDock v0.1.12 Release Notes
+# HeartDock v0.5.0 Release Notes
 
 本版本是 HeartDock 的早期 Windows 预发布版本，重点完成显示样式、启动页、日夜模式、应用图标、安装包和发布体验整理。
 
@@ -27,7 +27,7 @@
 
 普通用户请下载：
 
-- `HeartDock Setup 0.1.12.exe`
+- `HeartDock Setup 0.5.0.exe`
 
 安装后直接运行即可，不需要安装 Node.js 或 npm。
 
