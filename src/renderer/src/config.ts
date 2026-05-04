@@ -7,6 +7,8 @@ export interface ColorRule {
 export type HeartRateSourceMode = 'mock' | 'manual' | 'ble'
 export type HeartRateColorMode = 'range' | 'fixed'
 export type DisplayGlowLevel = 'off' | 'soft' | 'medium' | 'strong'
+export type DisplayBackgroundImageFit = 'contain' | 'cover' | 'stretch'
+export type DisplayStylePreset = 'none' | 'glass' | 'capsule' | 'neon' | 'kawaii' | 'image-card'
 
 export interface HeartDockConfig {
   heartRateSourceMode: HeartRateSourceMode
@@ -25,6 +27,13 @@ export interface HeartDockConfig {
   fixedColor: string
   glowLevel: DisplayGlowLevel
   colorRules: ColorRule[]
+  displayBackgroundImageEnabled: boolean
+  displayBackgroundImageUrl: string
+  displayBackgroundImageAssetFileName: string
+  displayBackgroundImageName: string
+  displayBackgroundImageOpacity: number
+  displayBackgroundImageFit: DisplayBackgroundImageFit
+  displayStylePreset: DisplayStylePreset
 }
 
 export const defaultConfig: HeartDockConfig = {
@@ -38,7 +47,7 @@ export const defaultConfig: HeartDockConfig = {
   clickThrough: false,
   showSettings: true,
   pureDisplay: false,
-  prefixText: '♥',
+  prefixText: '\u2665',
   unitText: 'bpm',
   colorMode: 'range',
   fixedColor: '#4ade80',
@@ -47,7 +56,14 @@ export const defaultConfig: HeartDockConfig = {
     { min: 30, max: 90, color: '#4ade80' },
     { min: 91, max: 120, color: '#facc15' },
     { min: 121, max: 240, color: '#fb7185' }
-  ]
+  ],
+  displayBackgroundImageEnabled: false,
+  displayBackgroundImageUrl: '',
+  displayBackgroundImageAssetFileName: '',
+  displayBackgroundImageName: '',
+  displayBackgroundImageOpacity: 0.85,
+  displayBackgroundImageFit: 'contain',
+  displayStylePreset: 'none'
 }
 
 const CONFIG_KEY = 'heartdock.config.v1'
@@ -94,6 +110,31 @@ export function normalizeGlowLevel(value: unknown): DisplayGlowLevel {
   return value === 'off' || value === 'soft' || value === 'medium' || value === 'strong'
     ? value
     : defaultConfig.glowLevel
+}
+
+export function normalizeDisplayBackgroundImageFit(value: unknown): DisplayBackgroundImageFit {
+  return value === 'contain' || value === 'cover' || value === 'stretch'
+    ? value
+    : defaultConfig.displayBackgroundImageFit
+}
+
+export function normalizeDisplayBackgroundImageOpacity(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return defaultConfig.displayBackgroundImageOpacity
+  }
+
+  return Math.min(Math.max(value, 0), 1)
+}
+
+export function normalizeDisplayStylePreset(value: unknown): DisplayStylePreset {
+  return value === 'none' ||
+    value === 'glass' ||
+    value === 'capsule' ||
+    value === 'neon' ||
+    value === 'kawaii' ||
+    value === 'image-card'
+    ? value
+    : defaultConfig.displayStylePreset
 }
 
 export function normalizeColorRules(value: unknown): ColorRule[] {
@@ -149,7 +190,30 @@ export function loadConfig(): HeartDockConfig {
       colorMode: normalizeColorMode(parsed.colorMode),
       fixedColor: normalizeColor(parsed.fixedColor, defaultConfig.fixedColor),
       glowLevel: normalizeGlowLevel(parsed.glowLevel),
-      colorRules: normalizeColorRules(parsed.colorRules)
+      colorRules: normalizeColorRules(parsed.colorRules),
+      displayBackgroundImageEnabled: Boolean(
+        parsed.displayBackgroundImageEnabled ?? defaultConfig.displayBackgroundImageEnabled
+      ),
+      displayBackgroundImageUrl: normalizeDisplayText(
+        parsed.displayBackgroundImageUrl,
+        defaultConfig.displayBackgroundImageUrl,
+        2048
+      ),
+      displayBackgroundImageAssetFileName: normalizeDisplayText(
+        parsed.displayBackgroundImageAssetFileName,
+        defaultConfig.displayBackgroundImageAssetFileName,
+        256
+      ),
+      displayBackgroundImageName: normalizeDisplayText(
+        parsed.displayBackgroundImageName,
+        defaultConfig.displayBackgroundImageName,
+        128
+      ),
+      displayBackgroundImageOpacity: normalizeDisplayBackgroundImageOpacity(
+        parsed.displayBackgroundImageOpacity
+      ),
+      displayBackgroundImageFit: normalizeDisplayBackgroundImageFit(parsed.displayBackgroundImageFit),
+      displayStylePreset: normalizeDisplayStylePreset(parsed.displayStylePreset)
     }
   } catch {
     return createDefaultConfig()
@@ -168,11 +232,18 @@ export function createDefaultConfig(): HeartDockConfig {
     clickThrough: defaultConfig.clickThrough,
     showSettings: defaultConfig.showSettings,
     pureDisplay: defaultConfig.pureDisplay,
-    prefixText: normalizeDisplayText(defaultConfig.prefixText, '♥', 8),
+    prefixText: normalizeDisplayText(defaultConfig.prefixText, '\u2665', 8),
     unitText: normalizeDisplayText(defaultConfig.unitText, 'bpm', 8),
     colorMode: defaultConfig.colorMode,
     fixedColor: normalizeColor(defaultConfig.fixedColor, '#4ade80'),
     glowLevel: defaultConfig.glowLevel,
-    colorRules: normalizeColorRules(defaultConfig.colorRules)
+    colorRules: normalizeColorRules(defaultConfig.colorRules),
+    displayBackgroundImageEnabled: defaultConfig.displayBackgroundImageEnabled,
+    displayBackgroundImageUrl: defaultConfig.displayBackgroundImageUrl,
+    displayBackgroundImageAssetFileName: defaultConfig.displayBackgroundImageAssetFileName,
+    displayBackgroundImageName: defaultConfig.displayBackgroundImageName,
+    displayBackgroundImageOpacity: defaultConfig.displayBackgroundImageOpacity,
+    displayBackgroundImageFit: defaultConfig.displayBackgroundImageFit,
+    displayStylePreset: defaultConfig.displayStylePreset
   }
 }

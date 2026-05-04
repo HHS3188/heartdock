@@ -29,16 +29,27 @@ body,
   background: transparent;
 }
 
+input::selection,
+textarea::selection,
+[contenteditable='true']::selection {
+  color: #ffffff;
+  background: rgba(56, 189, 248, 0.42);
+}
+
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 input,
-select {
+select,
+textarea,
+[contenteditable='true'] {
   user-select: text;
   -webkit-user-select: text;
+  caret-color: #7dd3fc;
 }
 
 button {
@@ -57,7 +68,9 @@ button {
 .no-drag,
 input,
 button,
-select {
+select,
+textarea,
+[contenteditable='true'] {
   -webkit-app-region: no-drag;
 }
 
@@ -228,6 +241,69 @@ select {
   color: rgba(255, 255, 255, 0.82);
   font-size: 20px;
   font-weight: 700;
+}
+
+.display-background-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.normal-display-frame {
+  width: 100%;
+  margin: 14px 0 18px;
+  border-radius: 24px;
+}
+
+.normal-display-frame .heart-row {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+}
+
+.display-background-frame.has-display-background {
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.28), rgba(2, 6, 23, 0.18));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 28px rgba(0, 0, 0, 0.14);
+}
+
+.normal-display-frame.has-display-background {
+  min-height: 150px;
+  padding: 26px 24px;
+}
+
+.display-background-image {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.display-background-fit-contain .display-background-image {
+  background-size: contain;
+}
+
+.display-background-fit-cover .display-background-image {
+  background-size: cover;
+}
+
+.display-background-fit-stretch .display-background-image {
+  background-size: 100% 100%;
+}
+
+.display-background-frame.has-display-background .heart-display-row {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.16);
+  backdrop-filter: blur(1px);
 }
 
 .settings-panel {
@@ -707,21 +783,73 @@ select {
 }
 
 .custom-select-menu {
-  position: absolute;
-  top: calc(100% + 7px);
-  right: 0;
-  left: 0;
+  position: static;
   display: grid;
+  max-height: 0;
   gap: 6px;
-  padding: 7px;
-  border: 1px solid rgba(125, 211, 252, 0.24);
+  margin-top: 0;
+  padding: 0 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(125, 211, 252, 0);
   border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(17, 27, 46, 0.98), rgba(8, 14, 26, 0.98));
   box-shadow:
-    0 18px 38px rgba(0, 0, 0, 0.38),
+    0 12px 26px rgba(0, 0, 0, 0),
+    0 0 0 1px rgba(255, 255, 255, 0),
+    inset 0 1px 0 rgba(255, 255, 255, 0);
+  opacity: 0;
+  pointer-events: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 211, 252, 0.48) transparent;
+  transform: translateY(-6px);
+  visibility: hidden;
+  transition:
+    max-height 0.22s ease,
+    margin-top 0.18s ease,
+    padding 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    visibility 0s linear 0.18s;
+}
+
+.custom-select.is-open .custom-select-menu {
+  max-height: clamp(168px, 38vh, 280px);
+  margin-top: 7px;
+  padding: 7px;
+  border-color: rgba(125, 211, 252, 0.24);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.26),
     0 0 0 1px rgba(255, 255, 255, 0.03),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.custom-select-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-select-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-select-menu::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.48);
+  background-clip: content-box;
+}
+
+.custom-select-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(186, 230, 253, 0.68);
+  background-clip: content-box;
 }
 
 .custom-select-option {
@@ -734,11 +862,19 @@ select {
   color: rgba(248, 250, 252, 0.92);
   background: transparent;
   cursor: pointer;
+  opacity: 0;
   text-align: left;
+  transform: translateY(-4px);
   transition:
     border-color 0.14s ease,
     background 0.14s ease,
-    transform 0.14s ease;
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.custom-select.is-open .custom-select-option {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .custom-select-option:hover {
@@ -1060,6 +1196,28 @@ select {
 }
 
 
+.refresh-interval-field {
+  grid-template-columns: 96px auto;
+  justify-content: start;
+  justify-self: start;
+  width: auto;
+  max-width: 240px;
+}
+
+.refresh-interval-input {
+  width: 96px !important;
+}
+
+.refresh-interval-actions {
+  grid-template-columns: repeat(2, 54px);
+}
+
+.refresh-interval-actions .range-action-button {
+  width: 54px;
+  font-size: 12px;
+}
+
+
 .heart-display-row.glow-off .heart,
 .heart-display-row.glow-off .bpm {
   filter: none;
@@ -1100,6 +1258,43 @@ select {
   letter-spacing: normal;
 }
 
+
+.background-image-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.background-file-row {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  color: rgba(226, 232, 240, 0.78);
+  background: #162033;
+  font-size: 13px;
+}
+
+.background-file-row strong {
+  overflow: hidden;
+  color: rgba(248, 250, 252, 0.94);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-card-compact {
+  min-height: 64px;
+}
+
+.settings-panel input:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
 
 .source-panel {
   display: grid;
@@ -1255,6 +1450,31 @@ select {
   margin: 0;
 }
 
+.pure-display-frame {
+  width: max-content;
+  height: max-content;
+  margin: 0;
+  border-radius: 28px;
+  cursor: grab;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.pure-display-frame.has-display-background {
+  min-width: 300px;
+  min-height: 168px;
+  padding: 28px 32px;
+}
+
+.pure-display-frame:active {
+  cursor: grabbing;
+}
+
+.pure-display-frame .pure-heart-row {
+  position: relative;
+  z-index: 1;
+}
+
 .pure-heart-row {
   display: inline-flex;
   width: max-content;
@@ -1301,6 +1521,23 @@ select {
   filter: drop-shadow(0 0 18px currentColor);
 }
 
+@media (max-width: 620px) {
+  .background-image-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .normal-display-frame.has-display-background {
+    min-height: 128px;
+    padding: 20px 16px;
+  }
+
+  .pure-display-frame.has-display-background {
+    min-width: 240px;
+    min-height: 138px;
+    padding: 22px 24px;
+  }
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -1336,4 +1573,336 @@ select {
     width: 34px;
     height: 34px;
   }
+}
+
+/* Display style presets -------------------------------------------------- */
+.display-background-frame {
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+
+.display-background-frame::before,
+.display-background-frame::after {
+  position: absolute;
+  pointer-events: none;
+}
+
+.display-background-frame.has-display-frame .heart-display-row {
+  position: relative;
+  z-index: 2;
+}
+
+.display-background-frame.has-display-frame:not(.display-style-image-card) .heart-display-row {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.normal-display-frame.has-display-frame {
+  min-height: 132px;
+  padding: 24px 24px;
+}
+
+.pure-display-frame.has-display-frame {
+  min-width: 280px;
+  min-height: 132px;
+  padding: 26px 30px;
+}
+
+.display-style-none {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.display-style-none .heart-display-row {
+  padding: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.display-style-glass {
+  border: 1px solid rgba(226, 232, 240, 0.24) !important;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 22% 12%, rgba(125, 211, 252, 0.18), transparent 36%),
+    linear-gradient(145deg, rgba(248, 250, 252, 0.16), rgba(15, 23, 42, 0.26)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 18px 40px rgba(2, 6, 23, 0.18) !important;
+  backdrop-filter: blur(10px);
+}
+
+.display-style-capsule {
+  width: max-content;
+  min-width: min(100%, 280px);
+  margin-right: auto;
+  margin-left: auto;
+  border: 1px solid rgba(125, 211, 252, 0.28) !important;
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.82), rgba(30, 41, 59, 0.72)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 12px 28px rgba(2, 6, 23, 0.2) !important;
+}
+
+.normal-display-frame.display-style-capsule.has-display-frame {
+  min-height: 0;
+  padding: 16px 28px;
+}
+
+.pure-display-frame.display-style-capsule.has-display-frame {
+  min-width: 0;
+  min-height: 0;
+  padding: 18px 30px;
+}
+
+.display-style-neon {
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 20% 70%, rgba(244, 114, 182, 0.18), transparent 36%),
+    radial-gradient(circle at 86% 30%, rgba(56, 189, 248, 0.18), transparent 34%),
+    rgba(2, 6, 23, 0.5) !important;
+  box-shadow:
+    0 0 0 3px rgba(56, 189, 248, 0.08),
+    0 0 28px rgba(56, 189, 248, 0.18),
+    0 0 52px rgba(244, 114, 182, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+.display-style-neon::after {
+  content: "";
+  inset: 10px;
+  z-index: 1;
+  border: 1px solid rgba(244, 114, 182, 0.28);
+  border-radius: inherit;
+  filter: drop-shadow(0 0 10px rgba(244, 114, 182, 0.28));
+}
+
+.display-style-kawaii {
+  border: 1px solid rgba(251, 207, 232, 0.72) !important;
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 16% 24%, rgba(251, 207, 232, 0.82), transparent 22%),
+    radial-gradient(circle at 84% 26%, rgba(186, 230, 253, 0.78), transparent 24%),
+    linear-gradient(135deg, rgba(255, 241, 242, 0.72), rgba(219, 234, 254, 0.58) 48%, rgba(250, 245, 255, 0.72)) !important;
+  box-shadow:
+    0 18px 36px rgba(244, 114, 182, 0.13),
+    0 0 0 4px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42) !important;
+}
+
+.display-style-kawaii::before {
+  content: "♡";
+  top: 12px;
+  left: 16px;
+  z-index: 1;
+  color: rgba(244, 114, 182, 0.72);
+  font-size: 22px;
+  font-weight: 900;
+  text-shadow: 0 0 12px rgba(244, 114, 182, 0.36);
+  transform: rotate(-12deg);
+}
+
+.display-style-kawaii::after {
+  content: "✦";
+  right: 18px;
+  bottom: 12px;
+  z-index: 1;
+  color: rgba(56, 189, 248, 0.7);
+  font-size: 20px;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.34);
+  transform: rotate(10deg);
+}
+
+.display-style-kawaii .unit {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.display-style-image-card.has-display-frame,
+.display-style-image-card.has-display-background {
+  border: 0 !important;
+  border-radius: 30px;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+}
+
+.display-style-image-card:not(.has-display-background) {
+  border: 1px dashed rgba(125, 211, 252, 0.24) !important;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.38), rgba(30, 41, 59, 0.22)) !important;
+}
+
+.display-style-image-card.has-display-background .heart-display-row {
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.display-style-image-card.has-display-background .bpm,
+.display-style-image-card.has-display-background .heart {
+  text-shadow:
+    0 2px 12px rgba(2, 6, 23, 0.48),
+    0 0 24px currentColor;
+}
+
+.display-background-frame.has-display-background .display-background-image {
+  border-radius: inherit;
+}
+
+.display-background-frame.has-display-background .heart-display-row {
+  z-index: 2;
+}
+
+/* Refine: pause image background UI and make the no-background preset truly clean. */
+.display-style-none,
+.normal-display-frame.display-style-none,
+.pure-display-frame.display-style-none {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+}
+
+.normal-display-frame.display-style-none {
+  padding: 0 !important;
+}
+
+.pure-display-frame.display-style-none {
+  padding: 0 !important;
+}
+
+.display-style-none::before,
+.display-style-none::after {
+  content: none !important;
+  display: none !important;
+}
+
+.display-style-none .heart-display-row,
+.display-style-none.has-display-frame .heart-display-row {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+}
+
+/* Keep the no-background preset visually clean, but do not override the user's glow strength.
+   Text glow is still controlled by .heart-display-row.glow-off / soft / medium / strong. */
+
+
+
+/* Refinement: keep the no-background preset clean while preserving text-only glow. */
+.display-background-frame.display-style-none,
+.normal-display-frame.display-style-none,
+.pure-display-frame.display-style-none {
+  overflow: visible !important;
+}
+
+.display-style-none .heart-display-row,
+.display-style-none.has-display-frame .heart-display-row {
+  padding: 10px 22px 12px !important;
+  overflow: visible !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.pure-display-frame.display-style-none {
+  overflow: visible !important;
+}
+
+.pure-display-frame.display-style-none .pure-heart-row {
+  padding: 10px 24px 12px !important;
+}
+
+.display-style-none .bpm,
+.display-style-none .heart,
+.display-style-none .unit {
+  position: relative;
+  z-index: 1;
+}
+
+.heart-display-row.glow-off .heart,
+.heart-display-row.glow-off .bpm {
+  filter: none !important;
+  text-shadow: none !important;
+}
+
+.heart-display-row.glow-soft .bpm {
+  filter: drop-shadow(0 0 8px currentColor) !important;
+  text-shadow: none !important;
+}
+
+.heart-display-row.glow-medium .bpm {
+  filter:
+    drop-shadow(0 0 10px currentColor)
+    drop-shadow(0 0 16px currentColor) !important;
+  text-shadow: none !important;
+}
+
+.heart-display-row.glow-strong .bpm {
+  filter:
+    drop-shadow(0 0 12px currentColor)
+    drop-shadow(0 0 22px currentColor)
+    drop-shadow(0 0 30px currentColor) !important;
+  text-shadow: none !important;
+}
+
+.heart-display-row.glow-soft .heart {
+  filter: drop-shadow(0 0 8px currentColor) !important;
+}
+
+.heart-display-row.glow-medium .heart {
+  filter: drop-shadow(0 0 14px currentColor) !important;
+}
+
+.heart-display-row.glow-strong .heart {
+  filter:
+    drop-shadow(0 0 16px currentColor)
+    drop-shadow(0 0 28px currentColor) !important;
+}
+
+.pure-heart-row:hover .bpm,
+.pure-heart-row:hover .heart {
+  transform: none;
+}
+
+.display-style-none .pure-heart-row:hover .bpm,
+.display-style-none .pure-heart-row:hover .heart {
+  filter: inherit;
+}
+
+
+/* Pure display hit area refinement: only the heart-rate row is interactive. */
+.pure-display-view,
+.pure-display-frame {
+  pointer-events: none !important;
+}
+
+.pure-display-frame {
+  cursor: default;
+}
+
+.pure-display-frame .display-background-image,
+.pure-display-frame::before,
+.pure-display-frame::after {
+  pointer-events: none !important;
+}
+
+.pure-display-frame .pure-heart-row {
+  pointer-events: auto !important;
+  cursor: grab;
+}
+
+.pure-display-frame .pure-heart-row:active {
+  cursor: grabbing;
 }
