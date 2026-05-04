@@ -57,12 +57,51 @@ button {
   -webkit-user-select: none;
 }
 
+
+@keyframes heartdock-window-exit {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell.is-closing {
+    opacity: 1;
+    animation: none;
+  }
+}
+
 .app-shell {
+  position: relative;
   width: 100%;
   height: 100%;
   padding: 0;
   background: transparent;
   -webkit-app-region: drag;
+}
+
+.app-shell.is-closing {
+  pointer-events: none;
+  animation: heartdock-window-exit 120ms ease-in forwards;
+}
+
+.app-shell.is-first-run-notice:not(.is-first-run-leaving) > :not(.first-run-notice-backdrop) {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.985) translateY(10px);
+  filter: saturate(0.92);
+}
+
+.app-shell.is-first-run-leaving > :not(.first-run-notice-backdrop) {
+  animation: settings-page-reveal 940ms cubic-bezier(0.16, 1, 0.3, 1) 70ms both;
+}
+
+.app-shell.is-first-run-leaving .overlay-card {
+  animation: settings-page-reveal 940ms cubic-bezier(0.16, 1, 0.3, 1) 70ms both;
 }
 
 .no-drag,
@@ -209,6 +248,24 @@ textarea,
     0 9px 20px rgba(0, 0, 0, 0.22),
     0 0 0 3px rgba(248, 113, 113, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+
+.appearance-toggle-button {
+  color: rgba(224, 242, 254, 0.96);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.appearance-toggle-button:hover {
+  border-color: rgba(125, 211, 252, 0.52);
+  background:
+    radial-gradient(circle at 28% 20%, rgba(250, 204, 21, 0.26), transparent 34%),
+    linear-gradient(180deg, rgba(30, 64, 105, 0.96), rgba(15, 23, 42, 0.96));
+  box-shadow:
+    0 9px 20px rgba(0, 0, 0, 0.22),
+    0 0 0 3px rgba(56, 189, 248, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .heart-row {
@@ -1906,3 +1963,1013 @@ textarea,
 .pure-display-frame .pure-heart-row:active {
   cursor: grabbing;
 }
+
+
+
+.first-run-ble-note {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(56, 189, 248, 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.46), rgba(8, 13, 24, 0.42));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.first-run-ble-note strong {
+  color: rgba(224, 242, 254, 0.96);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.first-run-ble-note p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* Project links and first-run notice */
+.project-links-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(244, 114, 182, 0.08), transparent 36%),
+    linear-gradient(180deg, rgba(18, 29, 49, 0.96), rgba(10, 18, 32, 0.96));
+}
+
+.project-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.project-link-card {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 15px;
+  color: rgba(248, 250, 252, 0.92);
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.74), rgba(15, 23, 42, 0.9));
+  cursor: pointer;
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 18px rgba(0, 0, 0, 0.12);
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.project-link-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(56, 189, 248, 0.48);
+  background:
+    linear-gradient(180deg, rgba(21, 52, 82, 0.82), rgba(15, 23, 42, 0.94));
+  box-shadow:
+    0 0 0 3px rgba(56, 189, 248, 0.08),
+    0 12px 24px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.project-link-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 12px;
+  color: #bae6fd;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.24), transparent 34%),
+    linear-gradient(135deg, rgba(56, 189, 248, 0.24), rgba(244, 114, 182, 0.18));
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.16);
+}
+
+.project-link-card strong,
+.first-run-notice-link-card strong {
+  display: block;
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 13px;
+}
+
+.project-link-card small,
+.first-run-notice-link-card small {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: rgba(203, 213, 225, 0.62);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.first-run-notice-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-app-region: drag;
+}
+
+.first-run-notice-card {
+  position: relative;
+  display: grid;
+  width: min(640px, 100%);
+  max-height: 100%;
+  gap: 16px;
+  padding: 22px;
+  overflow: auto;
+  border: 1px solid rgba(186, 230, 253, 0.26);
+  border-radius: 28px;
+  color: rgba(248, 250, 252, 0.92);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(244, 114, 182, 0.16), transparent 32%),
+    radial-gradient(circle at 95% 20%, rgba(56, 189, 248, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(17, 26, 47, 0.98), rgba(8, 13, 24, 0.98));
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.48),
+    0 0 0 4px rgba(56, 189, 248, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: notice-card-enter 180ms ease-out;
+}
+
+.first-run-close-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(248, 250, 252, 0.14);
+  border-radius: 999px;
+  color: rgba(248, 250, 252, 0.88);
+  background: rgba(15, 23, 42, 0.58);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
+  -webkit-app-region: no-drag;
+}
+
+.first-run-close-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #ffffff;
+  background: rgba(127, 29, 29, 0.72);
+}
+
+.first-run-notice-card::before,
+.first-run-notice-card::after {
+  position: absolute;
+  pointer-events: none;
+  font-size: 22px;
+  filter: drop-shadow(0 0 12px rgba(244, 114, 182, 0.42));
+}
+
+.first-run-notice-card::before {
+  content: "♡";
+  top: 18px;
+  right: 25px;
+  color: rgba(244, 114, 182, 0.72);
+}
+
+.first-run-notice-card::after {
+  content: "✦";
+  bottom: 20px;
+  left: 24px;
+  color: rgba(125, 211, 252, 0.7);
+}
+
+.first-run-notice-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.66);
+  color: rgba(248, 250, 252, 0.9);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.first-run-notice-content {
+  display: grid;
+  gap: 12px;
+}
+
+.first-run-notice-content h1 {
+  margin: 0;
+  color: rgba(248, 250, 252, 0.98);
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.first-run-notice-content p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.78);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.first-run-notice-developer {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 5px 10px;
+  border: 1px solid rgba(244, 114, 182, 0.22);
+  border-radius: 999px;
+  color: rgba(248, 250, 252, 0.82) !important;
+  background: rgba(244, 114, 182, 0.08);
+  font-size: 12px !important;
+  font-weight: 800;
+  line-height: 1.4 !important;
+}
+
+.first-run-notice-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.first-run-notice-link-card {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 16px;
+  color: rgba(248, 250, 252, 0.92);
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.92));
+  cursor: pointer;
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.first-run-notice-link-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(125, 211, 252, 0.46);
+  box-shadow:
+    0 0 0 3px rgba(56, 189, 248, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.first-run-notice-hint {
+  padding: 10px 12px;
+  border: 1px solid rgba(250, 204, 21, 0.18);
+  border-radius: 14px;
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.first-run-notice-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.notice-confirm-row {
+  -webkit-app-region: no-drag;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 9px;
+  align-items: center;
+  color: rgba(248, 250, 252, 0.88);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notice-confirm-row.is-disabled {
+  color: rgba(148, 163, 184, 0.68);
+}
+
+.notice-confirm-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.notice-confirm-row input:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.primary-button.first-run-enter-button {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 16px;
+  color: #06111f;
+  background:
+    linear-gradient(135deg, #7dd3fc, #f9a8d4);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow:
+    0 12px 28px rgba(56, 189, 248, 0.16),
+    0 10px 24px rgba(244, 114, 182, 0.14);
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.primary-button.first-run-enter-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.primary-button.first-run-enter-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  box-shadow: none;
+}
+
+@keyframes notice-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .project-link-grid,
+  .first-run-notice-link-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .first-run-notice-card {
+    padding: 18px;
+    border-radius: 24px;
+  }
+}
+
+
+
+/* Startup page, transition polish, and appearance modes */
+@keyframes settings-page-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(34px) scale(0.97);
+  }
+
+  42% {
+    opacity: 0.78;
+    transform: translateY(8px) scale(0.992);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes first-run-backdrop-exit {
+  0% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.first-run-notice-backdrop {
+  overflow: hidden;
+}
+
+.first-run-notice-backdrop::before,
+.first-run-notice-backdrop::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 999px;
+  opacity: 0.5;
+  animation: notice-orb-float 5.2s ease-in-out infinite alternate;
+}
+
+.first-run-notice-backdrop::before {
+  width: 260px;
+  height: 260px;
+  right: 8%;
+  top: 8%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.18), transparent 68%);
+}
+
+.first-run-notice-backdrop::after {
+  width: 300px;
+  height: 300px;
+  left: 6%;
+  bottom: 2%;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.16), transparent 68%);
+  animation-delay: -1.6s;
+}
+
+.first-run-notice-backdrop.is-leaving {
+  pointer-events: none;
+  animation: first-run-backdrop-exit 880ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.first-run-notice-backdrop.is-leaving .first-run-notice-card {
+  animation: notice-card-exit 760ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.first-run-notice-card {
+  animation: notice-card-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.first-run-notice-card::before {
+  animation: notice-heart-pulse 1.8s ease-in-out infinite;
+}
+
+.first-run-notice-card::after {
+  animation: notice-star-twinkle 2.2s ease-in-out infinite;
+}
+
+.first-run-progress-shell {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 999px;
+  background: rgba(8, 13, 24, 0.5);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.24);
+}
+
+.first-run-progress-shell span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 10%;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(125, 211, 252, 0.9), rgba(244, 114, 182, 0.92), rgba(250, 204, 21, 0.82));
+  box-shadow:
+    0 0 18px rgba(56, 189, 248, 0.28),
+    0 0 22px rgba(244, 114, 182, 0.18);
+  transition: width 220ms ease-out;
+}
+
+.returning-notice-status {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 16px;
+  color: rgba(224, 242, 254, 0.92);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.12), transparent 38%),
+    rgba(15, 23, 42, 0.58);
+  font-weight: 800;
+}
+
+.returning-notice-status strong {
+  display: grid;
+  min-width: 44px;
+  min-height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  color: #06111f;
+  background: linear-gradient(135deg, #7dd3fc, #f9a8d4);
+  font-size: 13px;
+}
+
+.first-run-reset-button {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 2px;
+}
+
+@keyframes notice-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.965);
+  }
+
+  62% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.006);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notice-card-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.978);
+  }
+}
+
+@keyframes notice-orb-float {
+  from {
+    transform: translate3d(-10px, 8px, 0) scale(0.96);
+  }
+
+  to {
+    transform: translate3d(12px, -10px, 0) scale(1.05);
+  }
+}
+
+@keyframes notice-heart-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+
+  50% {
+    transform: scale(1.16);
+    opacity: 1;
+  }
+}
+
+@keyframes notice-star-twinkle {
+  0%, 100% {
+    transform: rotate(0deg) scale(0.92);
+    opacity: 0.62;
+  }
+
+  50% {
+    transform: rotate(14deg) scale(1.12);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .first-run-notice-card,
+  .first-run-notice-backdrop.is-leaving .first-run-notice-card,
+  .app-shell.is-first-run-leaving > :not(.first-run-notice-backdrop),
+  .first-run-notice-backdrop::before,
+  .first-run-notice-backdrop::after,
+  .first-run-notice-card::before,
+  .first-run-notice-card::after {
+    animation: none;
+  }
+}
+
+
+@keyframes heartdock-pastel-day-flow {
+  0% {
+    background-position: 0% 42%;
+  }
+
+  50% {
+    background-position: 100% 58%;
+  }
+
+  100% {
+    background-position: 0% 42%;
+  }
+}
+
+.app-shell.appearance-light {
+  color: #0f172a;
+}
+
+.app-shell.appearance-light .overlay-card {
+  color: #0f172a;
+  background:
+    linear-gradient(135deg, rgba(255, 244, 250, 0.96), rgba(232, 247, 255, 0.94), rgba(255, 255, 255, 0.9), rgba(244, 235, 255, 0.92)) !important;
+  background-size: 240% 240% !important;
+  animation: heartdock-pastel-day-flow 14s ease-in-out infinite;
+}
+
+.app-shell.appearance-light .overlay-card::before {
+  background:
+    radial-gradient(circle at 20% 8%, rgba(244, 114, 182, 0.16), transparent 32%),
+    radial-gradient(circle at 84% 18%, rgba(56, 189, 248, 0.16), transparent 34%),
+    radial-gradient(circle at 24% 92%, rgba(167, 139, 250, 0.1), transparent 28%);
+}
+
+.app-shell.appearance-light .badge,
+.app-shell.appearance-light .brand-badge,
+.app-shell.appearance-light .settings-panel,
+.app-shell.appearance-light .settings-section,
+.app-shell.appearance-light .source-panel,
+.app-shell.appearance-light .project-links-panel,
+.app-shell.appearance-light .color-editor-details,
+.app-shell.appearance-light .color-rule-card,
+.app-shell.appearance-light .custom-select-menu {
+  color: rgba(15, 23, 42, 0.9);
+  border-color: rgba(14, 116, 144, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 247, 251, 0.92), rgba(232, 247, 255, 0.9), rgba(249, 245, 255, 0.9));
+  background-size: 200% 200%;
+}
+
+.app-shell.appearance-light .settings-panel {
+  background:
+    linear-gradient(135deg, rgba(255, 247, 252, 0.96), rgba(231, 246, 255, 0.94), rgba(255, 255, 255, 0.9));
+  background-size: 220% 220%;
+  animation: heartdock-pastel-day-flow 18s ease-in-out infinite;
+}
+
+.app-shell.appearance-light .section-heading span,
+.app-shell.appearance-light .option-title,
+.app-shell.appearance-light .color-rules-title,
+.app-shell.appearance-light .custom-select-value,
+.app-shell.appearance-light .custom-select-option span,
+.app-shell.appearance-light .click-through-status span,
+.app-shell.appearance-light .click-through-status strong,
+.app-shell.appearance-light .project-link-card strong,
+.app-shell.appearance-light .ble-status-row strong {
+  color: rgba(15, 23, 42, 0.94);
+}
+
+.app-shell.appearance-light .section-heading small,
+.app-shell.appearance-light .option-desc,
+.app-shell.appearance-light .hint,
+.app-shell.appearance-light .custom-select-option small,
+.app-shell.appearance-light .project-link-card small,
+.app-shell.appearance-light .hex-input-wrap small,
+.app-shell.appearance-light .summary-hex,
+.app-shell.appearance-light .summary-hint {
+  color: rgba(51, 65, 85, 0.66);
+}
+
+.app-shell.appearance-light input[type='text'],
+.app-shell.appearance-light input[type='number'],
+.app-shell.appearance-light select,
+.app-shell.appearance-light .custom-select-trigger,
+.app-shell.appearance-light .range-field,
+.app-shell.appearance-light .project-link-card,
+.app-shell.appearance-light .option-card,
+.app-shell.appearance-light .click-through-status {
+  color: rgba(15, 23, 42, 0.94);
+  border-color: rgba(14, 116, 144, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(239, 248, 255, 0.9), rgba(255, 244, 250, 0.82));
+}
+
+.app-shell.appearance-light .custom-select-option {
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.app-shell.appearance-light .custom-select-option:hover,
+.app-shell.appearance-light .custom-select-option.is-selected {
+  border-color: rgba(14, 165, 233, 0.3);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.app-shell.appearance-light .secondary-button,
+.app-shell.appearance-light .reset-button,
+.app-shell.appearance-light .range-action-button {
+  color: rgba(15, 23, 42, 0.9);
+  border-color: rgba(14, 116, 144, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(219, 234, 254, 0.9));
+}
+
+.app-shell.appearance-light .heart {
+  color: inherit;
+}
+
+.app-shell.appearance-light .unit {
+  color: rgba(30, 41, 59, 0.76);
+}
+
+.app-shell.appearance-light .first-run-notice-card {
+  color: rgba(15, 23, 42, 0.9);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(244, 114, 182, 0.2), transparent 32%),
+    radial-gradient(circle at 95% 20%, rgba(56, 189, 248, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(255, 247, 252, 0.98), rgba(232, 247, 255, 0.96), rgba(255, 255, 255, 0.9), rgba(247, 240, 255, 0.94));
+  background-size: 220% 220%;
+  animation: heartdock-pastel-day-flow 15s ease-in-out infinite, notice-card-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.app-shell.appearance-light .first-run-notice-content h1,
+.app-shell.appearance-light .first-run-notice-link-card strong {
+  color: rgba(15, 23, 42, 0.96);
+}
+
+.app-shell.appearance-light .first-run-notice-content p,
+.app-shell.appearance-light .first-run-notice-link-card small {
+  color: rgba(51, 65, 85, 0.72);
+}
+
+.app-shell.appearance-light .first-run-notice-badge,
+.app-shell.appearance-light .first-run-notice-link-card,
+.app-shell.appearance-light .returning-notice-status {
+  color: rgba(15, 23, 42, 0.9);
+  border-color: rgba(14, 116, 144, 0.18);
+  background: rgba(255, 255, 255, 0.64);
+}
+
+/* Day mode contrast pass: keep the pastel feeling, but make controls and editable fields readable. */
+.app-shell.appearance-light {
+  color: #172033;
+}
+
+.app-shell.appearance-light .overlay-card {
+  color: #172033;
+}
+
+.app-shell.appearance-light .settings-panel,
+.app-shell.appearance-light .settings-section,
+.app-shell.appearance-light .source-panel,
+.app-shell.appearance-light .project-links-panel,
+.app-shell.appearance-light .color-rules-editor,
+.app-shell.appearance-light .color-editor-details,
+.app-shell.appearance-light .color-rule-card,
+.app-shell.appearance-light .color-rule-card-body,
+.app-shell.appearance-light .custom-color-control,
+.app-shell.appearance-light .custom-select-menu {
+  color: #172033;
+  border-color: rgba(56, 139, 184, 0.22);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(255, 199, 224, 0.3), transparent 35%),
+    radial-gradient(circle at 92% 18%, rgba(186, 230, 253, 0.44), transparent 36%),
+    linear-gradient(135deg, rgba(255, 252, 255, 0.94), rgba(235, 248, 255, 0.92), rgba(255, 245, 251, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 10px 24px rgba(59, 130, 246, 0.08);
+}
+
+.app-shell.appearance-light .color-rules-editor {
+  border-color: rgba(56, 139, 184, 0.26);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(226, 245, 255, 0.7), rgba(255, 241, 249, 0.64));
+}
+
+.app-shell.appearance-light .section-heading span,
+.app-shell.appearance-light .settings-panel label,
+.app-shell.appearance-light .setting-field,
+.app-shell.appearance-light .field-label,
+.app-shell.appearance-light .option-title,
+.app-shell.appearance-light .color-rules-title,
+.app-shell.appearance-light .color-rule-card summary,
+.app-shell.appearance-light .color-editor-details summary,
+.app-shell.appearance-light .custom-select-value,
+.app-shell.appearance-light .custom-select-option span,
+.app-shell.appearance-light .click-through-status span,
+.app-shell.appearance-light .click-through-status strong,
+.app-shell.appearance-light .project-link-card strong,
+.app-shell.appearance-light .ble-status-row strong,
+.app-shell.appearance-light .background-file-row strong {
+  color: #172033;
+}
+
+.app-shell.appearance-light .section-heading small,
+.app-shell.appearance-light .option-desc,
+.app-shell.appearance-light .hint,
+.app-shell.appearance-light .settings-panel .color-rule-range-inputs label,
+.app-shell.appearance-light .custom-select-option small,
+.app-shell.appearance-light .project-link-card small,
+.app-shell.appearance-light .hex-input-wrap small,
+.app-shell.appearance-light .summary-hex,
+.app-shell.appearance-light .summary-hint,
+.app-shell.appearance-light .color-rules-header small,
+.app-shell.appearance-light .background-file-row,
+.app-shell.appearance-light .source-panel,
+.app-shell.appearance-light .ble-message {
+  color: rgba(51, 65, 85, 0.78);
+}
+
+.app-shell.appearance-light input[type='text'],
+.app-shell.appearance-light input[type='number'],
+.app-shell.appearance-light select,
+.app-shell.appearance-light .hex-color-input,
+.app-shell.appearance-light .range-value-input,
+.app-shell.appearance-light .refresh-interval-input,
+.app-shell.appearance-light .custom-select-trigger,
+.app-shell.appearance-light .range-field,
+.app-shell.appearance-light .project-link-card,
+.app-shell.appearance-light .option-card,
+.app-shell.appearance-light .click-through-status,
+.app-shell.appearance-light .background-file-row {
+  color: #172033 !important;
+  border-color: rgba(56, 139, 184, 0.24) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(236, 248, 255, 0.92), rgba(255, 246, 252, 0.88)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 8px 18px rgba(15, 23, 42, 0.06) !important;
+}
+
+.app-shell.appearance-light input[type='text']::placeholder,
+.app-shell.appearance-light input[type='number']::placeholder,
+.app-shell.appearance-light .range-value-input::placeholder,
+.app-shell.appearance-light .hex-color-input::placeholder {
+  color: rgba(71, 85, 105, 0.52);
+}
+
+.app-shell.appearance-light input[type='text']:focus,
+.app-shell.appearance-light input[type='number']:focus,
+.app-shell.appearance-light .range-value-input:focus,
+.app-shell.appearance-light .hex-color-input:focus,
+.app-shell.appearance-light .custom-select.is-open .custom-select-trigger {
+  color: #0f172a !important;
+  border-color: rgba(14, 165, 233, 0.55) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(224, 246, 255, 0.96), rgba(255, 239, 248, 0.94)) !important;
+  box-shadow:
+    0 0 0 3px rgba(14, 165, 233, 0.14),
+    0 10px 20px rgba(14, 165, 233, 0.1) !important;
+}
+
+.app-shell.appearance-light .range-action-button,
+.app-shell.appearance-light .secondary-button,
+.app-shell.appearance-light .reset-button {
+  color: #172033 !important;
+  border-color: rgba(56, 139, 184, 0.24) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(220, 240, 255, 0.9)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 7px 16px rgba(15, 23, 42, 0.08) !important;
+}
+
+.app-shell.appearance-light .range-action-button:hover,
+.app-shell.appearance-light .secondary-button:hover,
+.app-shell.appearance-light .reset-button:hover,
+.app-shell.appearance-light .project-link-card:hover,
+.app-shell.appearance-light .option-card:hover {
+  color: #0f172a !important;
+  border-color: rgba(14, 165, 233, 0.42) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(217, 244, 255, 0.94), rgba(255, 236, 248, 0.9)) !important;
+  box-shadow:
+    0 0 0 3px rgba(14, 165, 233, 0.1),
+    0 12px 24px rgba(14, 116, 144, 0.1) !important;
+}
+
+.app-shell.appearance-light .custom-select-option {
+  color: #172033;
+  border-color: transparent;
+  background: transparent;
+}
+
+.app-shell.appearance-light .custom-select-option:hover,
+.app-shell.appearance-light .custom-select-option.is-selected {
+  color: #0f172a;
+  border-color: rgba(14, 165, 233, 0.28);
+  background: rgba(186, 230, 253, 0.28);
+}
+
+.app-shell.appearance-light .summary-color-dot,
+.app-shell.appearance-light .color-preview {
+  border-color: rgba(15, 23, 42, 0.26);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.88),
+    0 8px 18px rgba(15, 23, 42, 0.14),
+    0 0 16px currentColor;
+}
+
+.app-shell.appearance-light .color-swatch-button {
+  border-color: rgba(15, 23, 42, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    0 6px 14px rgba(15, 23, 42, 0.12);
+}
+
+.app-shell.appearance-light .color-swatch-button.is-active {
+  border-color: rgba(15, 23, 42, 0.32);
+  box-shadow:
+    0 0 0 3px rgba(14, 165, 233, 0.2),
+    0 9px 18px rgba(15, 23, 42, 0.16);
+}
+
+.app-shell.appearance-light .settings-panel input[type='range'] {
+  accent-color: #38bdf8;
+  filter: saturate(1.08);
+}
+
+.app-shell.appearance-light .checkbox-row input[type='checkbox'],
+.app-shell.appearance-light .first-run-notice-check input[type='checkbox'] {
+  border-color: rgba(56, 139, 184, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(225, 241, 255, 0.92));
+}
+
+.app-shell.appearance-light .checkbox-row input[type='checkbox']:checked,
+.app-shell.appearance-light .first-run-notice-check input[type='checkbox']:checked {
+  border-color: rgba(14, 165, 233, 0.72);
+  background:
+    linear-gradient(180deg, rgba(56, 189, 248, 0.95), rgba(14, 165, 233, 0.88));
+}
+
+.app-shell.appearance-light .unit {
+  color: rgba(30, 41, 59, 0.82);
+}
+
+.app-shell.appearance-light .top-row::after {
+  opacity: 0.18;
+}
+
+
+
+/* The compact refresh interval control is only a layout wrapper; keep it visually transparent in day mode. */
+.app-shell.appearance-light .refresh-interval-field {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.appearance-light .appearance-toggle-button {
+  color: #172033;
+  border-color: rgba(56, 139, 184, 0.22);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(250, 204, 21, 0.28), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(220, 240, 255, 0.86));
+}
+
+.app-shell.appearance-light .appearance-toggle-button:hover {
+  color: #0f172a;
+  border-color: rgba(14, 165, 233, 0.42);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(250, 204, 21, 0.34), transparent 40%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(217, 244, 255, 0.94), rgba(255, 236, 248, 0.9));
+}
+
+
+/* Light mode polish: range wrappers are layout only, not visual cards. */
+.app-shell.appearance-light .range-field,
+.app-shell.appearance-light .color-rule-range-inputs .range-field,
+.app-shell.appearance-light .refresh-interval-field {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.appearance-light .color-rule-range-inputs label {
+  color: rgba(51, 65, 85, 0.82) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.appearance-light .color-rule-card-body {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(224, 245, 255, 0.42), rgba(255, 238, 248, 0.34)) !important;
+}
+
+.app-shell.appearance-light .custom-color-control {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.38), rgba(229, 246, 255, 0.32), rgba(255, 239, 248, 0.28)) !important;
+}
+
+.app-shell.appearance-light .first-run-ble-note {
+  border-color: rgba(14, 116, 144, 0.18);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(56, 189, 248, 0.12), transparent 42%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.62), rgba(232, 247, 255, 0.56), rgba(255, 244, 250, 0.5));
+}
+
+.app-shell.appearance-light .first-run-ble-note strong {
+  color: #172033;
+}
+
+.app-shell.appearance-light .first-run-ble-note p {
+  color: rgba(51, 65, 85, 0.78);
+}
+
+/* Make splash-to-settings transition more visible and smooth. */
+.app-shell.is-first-run-leaving .first-run-notice-backdrop {
+  will-change: opacity;
+}
+
+.app-shell.is-first-run-leaving .overlay-card {
+  will-change: opacity, transform;
+}
+

@@ -18,6 +18,7 @@ interface HeartDockApi {
   setClickThrough: (enabled: boolean) => Promise<boolean>
   getClickThrough: () => Promise<boolean>
   closeWindow: () => Promise<void>
+  openExternal: (url: string) => Promise<boolean>
   getWindowBounds: () => Promise<HeartDockWindowBounds | null>
   setWindowBounds: (bounds: HeartDockWindowBounds) => Promise<boolean>
   moveWindowBy: (deltaX: number, deltaY: number) => Promise<boolean>
