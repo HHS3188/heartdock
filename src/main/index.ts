@@ -25,22 +25,28 @@ interface DisplayBackgroundImageResult {
 
 let overlayWindow: BrowserWindow | null = null
 let clickThrough = false
+let isStartupView = true
 let saveWindowStateTimer: ReturnType<typeof setTimeout> | null = null
 let bluetoothSelectionTimer: ReturnType<typeof setTimeout> | null = null
 
 const MIN_WINDOW_STATE: WindowState = {
-  width: 520,
-  height: 420
+  width: 720,
+  height: 680
 }
 
 const DEFAULT_WINDOW_STATE: WindowState = {
-  width: 760,
-  height: 560
+  width: 1080,
+  height: 860
+}
+
+const STARTUP_WINDOW_STATE: WindowState = {
+  width: 1120,
+  height: 920
 }
 
 const MAX_WINDOW_STATE: WindowState = {
-  width: 1180,
-  height: 900
+  width: 1440,
+  height: 1080
 }
 
 const BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
@@ -239,6 +245,24 @@ function getIntersectionArea(first: WindowBounds, second: WindowBounds): number 
   return width * height
 }
 
+function getStartupWindowState(): WindowState {
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea
+  const width = clampNumber(
+    STARTUP_WINDOW_STATE.width,
+    MIN_WINDOW_STATE.width,
+    Math.min(MAX_WINDOW_STATE.width, Math.max(MIN_WINDOW_STATE.width, primaryWorkArea.width)),
+    STARTUP_WINDOW_STATE.width
+  )
+  const height = clampNumber(
+    STARTUP_WINDOW_STATE.height,
+    MIN_WINDOW_STATE.height,
+    Math.min(MAX_WINDOW_STATE.height, Math.max(MIN_WINDOW_STATE.height, primaryWorkArea.height)),
+    STARTUP_WINDOW_STATE.height
+  )
+
+  return centerInPrimaryDisplay(width, height)
+}
+
 function isWindowStateVisible(state: WindowState): boolean {
   if (typeof state.x !== 'number' || typeof state.y !== 'number') {
     return false
@@ -309,6 +333,8 @@ function getCurrentWindowState(): WindowState | null {
 }
 
 function saveWindowStateSync(): void {
+  if (isStartupView) return
+
   const state = getCurrentWindowState()
 
   if (!state) return
@@ -321,6 +347,8 @@ function saveWindowStateSync(): void {
 }
 
 function scheduleSaveWindowState(): void {
+  if (isStartupView) return
+
   if (saveWindowStateTimer) {
     clearTimeout(saveWindowStateTimer)
   }
@@ -340,6 +368,54 @@ function flushWindowState(): void {
   saveWindowStateSync()
 }
 
+function showStartupViewAndUseFixedSize(): boolean {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    return false
+  }
+
+  isStartupView = true
+
+  if (saveWindowStateTimer) {
+    clearTimeout(saveWindowStateTimer)
+    saveWindowStateTimer = null
+  }
+
+  const startupWindowState = getStartupWindowState()
+
+  overlayWindow.setBounds(
+    {
+      width: startupWindowState.width,
+      height: startupWindowState.height,
+      x: startupWindowState.x,
+      y: startupWindowState.y
+    },
+    false
+  )
+
+  return true
+}
+
+function enterMainViewAndRestoreWindowState(): boolean {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    return false
+  }
+
+  isStartupView = false
+
+  const windowState = loadWindowState()
+  overlayWindow.setBounds(
+    {
+      width: windowState.width,
+      height: windowState.height,
+      x: windowState.x,
+      y: windowState.y
+    },
+    false
+  )
+
+  return true
+}
+
 function setOverlayAlwaysOnTop(value: boolean): boolean {
   overlayWindow?.setAlwaysOnTop(value)
   return value
@@ -347,7 +423,21 @@ function setOverlayAlwaysOnTop(value: boolean): boolean {
 
 function setOverlayClickThrough(value: boolean): boolean {
   clickThrough = value
-  overlayWindow?.setIgnoreMouseEvents(value, { forward: true })
+
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    return value
+  }
+
+  try {
+    if (value) {
+      overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    } else {
+      overlayWindow.setIgnoreMouseEvents(false)
+    }
+  } catch (error) {
+    console.error('[HeartDock] failed to update click-through:', error)
+  }
+
   return value
 }
 
@@ -413,6 +503,14 @@ function registerIpcHandlers(): void {
 
     await shell.openExternal(url)
     return true
+  })
+
+  ipcMain.handle('overlay:show-startup-view', () => {
+    return showStartupViewAndUseFixedSize()
+  })
+
+  ipcMain.handle('overlay:enter-main-view', () => {
+    return enterMainViewAndRestoreWindowState()
   })
 
   ipcMain.handle('overlay:select-display-background-image', () => {
@@ -506,13 +604,14 @@ function registerIpcHandlers(): void {
 }
 
 function createOverlayWindow(): void {
-  const windowState = loadWindowState()
+  isStartupView = true
+  const startupWindowState = getStartupWindowState()
 
   overlayWindow = new BrowserWindow({
-    width: windowState.width,
-    height: windowState.height,
-    x: windowState.x,
-    y: windowState.y,
+    width: startupWindowState.width,
+    height: startupWindowState.height,
+    x: startupWindowState.x,
+    y: startupWindowState.y,
     minWidth: MIN_WINDOW_STATE.width,
     minHeight: MIN_WINDOW_STATE.height,
     maxWidth: MAX_WINDOW_STATE.width,

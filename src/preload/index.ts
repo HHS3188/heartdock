@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('heartdock', {
   setClickThrough: (enabled: boolean) => ipcRenderer.invoke('overlay:set-click-through', enabled),
   getClickThrough: () => ipcRenderer.invoke('overlay:get-click-through'),
   closeWindow: () => ipcRenderer.invoke('overlay:close-window'),
+  showStartupView: (): Promise<boolean> => ipcRenderer.invoke('overlay:show-startup-view'),
+  enterMainView: (): Promise<boolean> => ipcRenderer.invoke('overlay:enter-main-view'),
   openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('overlay:open-external', url),
   getWindowBounds: () => ipcRenderer.invoke('overlay:get-window-bounds'),
   setWindowBounds: (bounds: HeartDockWindowBounds) =>

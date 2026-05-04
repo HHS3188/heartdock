@@ -2,7 +2,7 @@
   "name": "heartdock",
   "version": "0.1.12",
   "description": "A customizable desktop heart rate overlay for Windows.",
-  "author": "Your Name",
+  "author": "HHS3188",
   "license": "AGPL-3.0-only",
   "private": false,
   "type": "module",
