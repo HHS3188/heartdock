@@ -8,6 +8,12 @@ HeartDock 是一个面向 Windows 的桌面心率悬浮窗工具。
 
 ---
 
+## 界面预览
+
+![HeartDock 启动页](docs/assets/startup-page.png)
+
+---
+
 ## 当前版本
 
 当前最新预发布版本：**v0.5.0**
