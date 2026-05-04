@@ -81,7 +81,7 @@ button {
   height: 100%;
   padding: 0;
   background: transparent;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .app-shell.is-closing {
@@ -92,16 +92,15 @@ button {
 .app-shell.is-first-run-notice:not(.is-first-run-leaving) > :not(.first-run-notice-backdrop) {
   opacity: 0;
   pointer-events: none;
-  transform: scale(0.985) translateY(10px);
-  filter: saturate(0.92);
+  transform: translateY(8px);
 }
 
 .app-shell.is-first-run-leaving > :not(.first-run-notice-backdrop) {
-  animation: settings-page-reveal 940ms cubic-bezier(0.16, 1, 0.3, 1) 70ms both;
+  animation: settings-page-reveal 360ms ease-out 20ms both;
 }
 
 .app-shell.is-first-run-leaving .overlay-card {
-  animation: settings-page-reveal 940ms cubic-bezier(0.16, 1, 0.3, 1) 70ms both;
+  animation: settings-page-reveal 360ms ease-out 20ms both;
 }
 
 .no-drag,
@@ -112,6 +111,26 @@ textarea,
 [contenteditable='true'] {
   -webkit-app-region: no-drag;
 }
+
+.overlay-card,
+.first-run-notice-card,
+.top-bar {
+  -webkit-app-region: drag;
+}
+
+.overlay-card input,
+.overlay-card button,
+.overlay-card select,
+.overlay-card textarea,
+.overlay-card [contenteditable='true'],
+.first-run-notice-card input,
+.first-run-notice-card button,
+.first-run-notice-card select,
+.first-run-notice-card textarea,
+.first-run-notice-card [contenteditable='true'] {
+  -webkit-app-region: no-drag;
+}
+
 
 .overlay-card {
   position: relative;
@@ -2338,19 +2357,14 @@ textarea,
 
 /* Startup page, transition polish, and appearance modes */
 @keyframes settings-page-reveal {
-  0% {
+  from {
     opacity: 0;
-    transform: translateY(34px) scale(0.97);
+    transform: translateY(14px);
   }
 
-  42% {
-    opacity: 0.78;
-    transform: translateY(8px) scale(0.992);
-  }
-
-  100% {
+  to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
@@ -2398,15 +2412,15 @@ textarea,
 
 .first-run-notice-backdrop.is-leaving {
   pointer-events: none;
-  animation: first-run-backdrop-exit 880ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: first-run-backdrop-exit 260ms ease-in forwards;
 }
 
 .first-run-notice-backdrop.is-leaving .first-run-notice-card {
-  animation: notice-card-exit 760ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: notice-card-exit 240ms ease-in forwards;
 }
 
 .first-run-notice-card {
-  animation: notice-card-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: notice-card-enter 220ms ease-out both;
 }
 
 .first-run-notice-card::before {
@@ -2973,3 +2987,474 @@ textarea,
   will-change: opacity, transform;
 }
 
+/* First-run notice final polish: opaque card, no dark rim, full content fit. */
+.first-run-notice-backdrop {
+  padding: 28px !important;
+  overflow: hidden !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  -webkit-app-region: no-drag !important;
+}
+
+.first-run-notice-backdrop::before,
+.first-run-notice-backdrop::after {
+  opacity: 0.22 !important;
+  filter: none !important;
+}
+
+.first-run-notice-card {
+  width: min(980px, calc(100vw - 64px)) !important;
+  max-height: calc(100vh - 60px) !important;
+  gap: 14px !important;
+  padding: 30px 34px 28px !important;
+  overflow: visible !important;
+  border: 1px solid rgba(125, 211, 252, 0.18) !important;
+  border-radius: 32px !important;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(244, 114, 182, 0.13), transparent 32%),
+    radial-gradient(circle at 88% 10%, rgba(56, 189, 248, 0.16), transparent 34%),
+    linear-gradient(145deg, rgba(15, 23, 42, 0.985), rgba(8, 15, 30, 0.99)) !important;
+  box-shadow:
+    0 10px 28px rgba(2, 6, 23, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+.first-run-notice-card::before,
+.first-run-notice-card::after {
+  opacity: 0.32 !important;
+}
+
+.first-run-notice-card::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.first-run-close-button {
+  position: absolute !important;
+  top: 28px !important;
+  right: 28px !important;
+  z-index: 120 !important;
+  width: 44px !important;
+  height: 44px !important;
+  border-color: rgba(226, 232, 240, 0.2) !important;
+  background: rgba(15, 23, 42, 0.74) !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14) !important;
+}
+
+.first-run-notice-badge {
+  padding: 7px 14px !important;
+  font-size: 13px !important;
+}
+
+.first-run-notice-content {
+  gap: 13px !important;
+}
+
+.first-run-notice-content h1 {
+  font-size: 30px !important;
+  line-height: 1.16 !important;
+  margin-right: 72px !important;
+}
+
+.first-run-notice-content p {
+  font-size: 15px !important;
+  line-height: 1.58 !important;
+}
+
+.first-run-notice-developer {
+  padding: 6px 13px !important;
+  font-size: 13px !important;
+}
+
+.first-run-ble-note {
+  padding: 14px 16px !important;
+  border-radius: 18px !important;
+  background: rgba(8, 18, 34, 0.74) !important;
+  border-color: rgba(56, 189, 248, 0.22) !important;
+}
+
+.first-run-ble-note strong {
+  font-size: 15px !important;
+}
+
+.first-run-ble-note p {
+  margin-top: 6px !important;
+  font-size: 14px !important;
+  line-height: 1.52 !important;
+}
+
+.first-run-progress-shell {
+  height: 8px !important;
+  background: rgba(8, 13, 24, 0.58) !important;
+}
+
+.first-run-notice-link-grid {
+  gap: 13px !important;
+}
+
+.first-run-notice-link-card {
+  padding: 14px 17px !important;
+  border-radius: 18px !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+}
+
+.first-run-notice-link-card strong {
+  font-size: 15px !important;
+}
+
+.first-run-notice-link-card small {
+  font-size: 12px !important;
+}
+
+.first-run-notice-hint {
+  padding: 13px 15px !important;
+  border-radius: 17px !important;
+  background: rgba(22, 24, 28, 0.86) !important;
+}
+
+.first-run-notice-actions {
+  gap: 13px !important;
+}
+
+.notice-confirm-row {
+  gap: 11px !important;
+  font-size: 14px !important;
+}
+
+.notice-confirm-row input {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.primary-button.first-run-enter-button {
+  min-height: 54px !important;
+  border-radius: 20px !important;
+}
+
+/* Fit the startup page on shorter screens without making normal 1080p displays feel cramped. */
+@media (max-height: 820px) {
+  .first-run-notice-backdrop {
+    padding: 20px !important;
+  }
+
+  .first-run-notice-card {
+    width: min(1000px, calc(100vw - 44px)) !important;
+    max-height: calc(100vh - 44px) !important;
+    gap: 10px !important;
+    padding: 24px 30px 22px !important;
+    border-radius: 28px !important;
+  }
+
+  .first-run-close-button {
+    top: 24px !important;
+    right: 24px !important;
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  .first-run-notice-content {
+    gap: 9px !important;
+  }
+
+  .first-run-notice-content h1 {
+    font-size: 27px !important;
+  }
+
+  .first-run-notice-content p {
+    font-size: 14px !important;
+    line-height: 1.45 !important;
+  }
+
+  .first-run-ble-note,
+  .first-run-notice-link-card,
+  .first-run-notice-hint {
+    padding: 11px 13px !important;
+  }
+
+  .first-run-ble-note p {
+    font-size: 13px !important;
+    line-height: 1.42 !important;
+  }
+
+  .primary-button.first-run-enter-button {
+    min-height: 48px !important;
+  }
+}
+
+@media (max-height: 700px) {
+  .first-run-notice-card {
+    gap: 8px !important;
+    padding: 18px 24px 18px !important;
+  }
+
+  .first-run-notice-content h1 {
+    font-size: 24px !important;
+  }
+
+  .first-run-notice-content p,
+  .first-run-ble-note p {
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
+  .first-run-ble-note {
+    padding: 8px 10px !important;
+  }
+
+  .first-run-progress-shell {
+    height: 6px !important;
+  }
+
+  .first-run-notice-link-card {
+    padding: 8px 10px !important;
+  }
+
+  .first-run-notice-hint {
+    padding: 8px 10px !important;
+  }
+
+  .primary-button.first-run-enter-button {
+    min-height: 40px !important;
+  }
+}
+
+
+/* Performance and transparent-hit-area polish. */
+.first-run-notice-backdrop {
+  -webkit-app-region: no-drag !important;
+}
+
+.first-run-notice-card {
+  -webkit-app-region: drag !important;
+}
+
+.first-run-notice-card button,
+.first-run-notice-card input,
+.first-run-notice-card a {
+  -webkit-app-region: no-drag !important;
+}
+
+.resize-handle {
+  touch-action: none;
+}
+
+.app-shell.is-first-run-leaving .first-run-notice-backdrop,
+.app-shell.is-first-run-leaving .overlay-card {
+  will-change: opacity, transform;
+}
+
+
+/* Final day-mode isolation fixes:
+   - Day mode should not recolor the heart display itself.
+   - BLE status rows need light-mode surfaces.
+   - Startup notice keeps dark readable contrast even when day mode is enabled. */
+.app-shell.appearance-light .heart-display-row,
+.app-shell.appearance-light .heart-display-row .heart,
+.app-shell.appearance-light .heart-display-row .bpm,
+.app-shell.appearance-light .heart-display-row .prefix-text {
+  color: inherit;
+}
+
+.app-shell.appearance-light .heart-display-row .unit,
+.app-shell.appearance-light .heart-display-row .pure-unit {
+  color: rgba(255, 255, 255, 0.86) !important;
+  text-shadow: 0 1px 10px rgba(15, 23, 42, 0.22);
+}
+
+.app-shell.appearance-light .normal-display-frame.display-style-none,
+.app-shell.appearance-light .pure-display-frame.display-style-none,
+.app-shell.appearance-light .display-background-frame.display-style-none {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.appearance-light .display-background-frame:not(.has-display-frame):not(.has-display-background) .heart-display-row {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* BLE information rows should follow the day theme instead of staying as dark blocks. */
+.app-shell.appearance-light .ble-status-row {
+  color: rgba(51, 65, 85, 0.84) !important;
+  border-color: rgba(56, 139, 184, 0.24) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(232, 247, 255, 0.88), rgba(255, 245, 251, 0.84)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 8px 18px rgba(15, 23, 42, 0.06) !important;
+}
+
+.app-shell.appearance-light .ble-status-row strong {
+  color: #172033 !important;
+  opacity: 0.96 !important;
+}
+
+.app-shell.appearance-light .source-panel .ble-status-row + .ble-status-row {
+  margin-top: 8px;
+}
+
+.app-shell.appearance-light .ble-message {
+  color: rgba(51, 65, 85, 0.82) !important;
+}
+
+/* The startup notice is a branding/notice surface, so keep it dark and readable in both themes. */
+.app-shell.appearance-light .first-run-notice-card {
+  color: rgba(248, 250, 252, 0.94) !important;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(244, 114, 182, 0.13), transparent 32%),
+    radial-gradient(circle at 88% 10%, rgba(56, 189, 248, 0.16), transparent 34%),
+    linear-gradient(145deg, rgba(15, 23, 42, 0.985), rgba(8, 15, 30, 0.99)) !important;
+  border-color: rgba(125, 211, 252, 0.18) !important;
+  box-shadow:
+    0 10px 28px rgba(2, 6, 23, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.app-shell.appearance-light .first-run-notice-content h1,
+.app-shell.appearance-light .first-run-notice-link-card strong,
+.app-shell.appearance-light .first-run-ble-note strong,
+.app-shell.appearance-light .first-run-notice-developer {
+  color: rgba(248, 250, 252, 0.96) !important;
+}
+
+.app-shell.appearance-light .first-run-notice-content p,
+.app-shell.appearance-light .first-run-notice-link-card small,
+.app-shell.appearance-light .first-run-ble-note p,
+.app-shell.appearance-light .first-run-notice-hint,
+.app-shell.appearance-light .notice-confirm-row {
+  color: rgba(203, 213, 225, 0.82) !important;
+}
+
+.app-shell.appearance-light .first-run-notice-badge {
+  color: rgba(248, 250, 252, 0.92) !important;
+  border-color: rgba(125, 211, 252, 0.24) !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+}
+
+.app-shell.appearance-light .first-run-ble-note {
+  border-color: rgba(56, 189, 248, 0.22) !important;
+  background: rgba(8, 18, 34, 0.74) !important;
+}
+
+.app-shell.appearance-light .first-run-notice-link-card {
+  color: rgba(248, 250, 252, 0.92) !important;
+  border-color: rgba(125, 211, 252, 0.18) !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+}
+
+.app-shell.appearance-light .first-run-notice-hint {
+  border-color: rgba(250, 204, 21, 0.22) !important;
+  background: rgba(22, 24, 28, 0.86) !important;
+}
+
+.app-shell.appearance-light .notice-confirm-row input {
+  accent-color: #38bdf8;
+}
+
+.app-shell.appearance-light .primary-button.first-run-enter-button {
+  color: #0f172a !important;
+}
+
+
+/* Final interaction performance polish:
+   Keep behavior the same, but reduce expensive repaint work during window resizing and page transitions. */
+.app-shell.is-window-resizing,
+.app-shell.is-window-resizing * {
+  transition-duration: 0ms !important;
+  animation-play-state: paused !important;
+  scroll-behavior: auto !important;
+}
+
+.app-shell.is-window-resizing .overlay-card,
+.app-shell.is-window-resizing .settings-panel,
+.app-shell.is-window-resizing .settings-section,
+.app-shell.is-window-resizing .source-panel,
+.app-shell.is-window-resizing .project-links-panel,
+.app-shell.is-window-resizing .color-rules-editor,
+.app-shell.is-window-resizing .color-rule-card,
+.app-shell.is-window-resizing .custom-select-menu {
+  backdrop-filter: none !important;
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.app-shell.is-window-resizing .overlay-card::before,
+.app-shell.is-window-resizing .overlay-card::after,
+.app-shell.is-window-resizing .display-background-frame::before,
+.app-shell.is-window-resizing .display-background-frame::after {
+  opacity: 0 !important;
+}
+
+.app-shell.is-window-resizing .settings-panel {
+  contain: layout paint;
+}
+
+.resize-handle {
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+/* Make startup-to-settings transition lighter: opacity + tiny vertical movement only. */
+.app-shell.is-first-run-leaving > :not(.first-run-notice-backdrop),
+.app-shell.is-first-run-leaving .overlay-card {
+  animation: settings-page-reveal-fast 240ms ease-out 20ms both !important;
+  will-change: opacity, transform;
+}
+
+.first-run-notice-backdrop.is-leaving {
+  animation: first-run-backdrop-exit-fast 180ms ease-in forwards !important;
+}
+
+.first-run-notice-backdrop.is-leaving .first-run-notice-card {
+  animation: notice-card-exit-fast 180ms ease-in forwards !important;
+}
+
+@keyframes settings-page-reveal-fast {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes first-run-backdrop-exit-fast {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes notice-card-exit-fast {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* Small general polish without changing features. */
+.settings-panel {
+  contain: layout paint;
+}
+
+.custom-select-menu,
+.color-rule-card,
+.settings-section,
+.source-panel,
+.project-links-panel {
+  transform: translateZ(0);
+}

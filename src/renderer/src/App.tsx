@@ -228,12 +228,16 @@ function App() {
     isResizing: false,
     startScreenX: 0,
     startScreenY: 0,
-    startBounds: null as HeartDockWindowBounds | null
+    startBounds: null as HeartDockWindowBounds | null,
+    animationFrameId: 0,
+    pendingBounds: null as HeartDockWindowBounds | null,
+    lastAppliedAt: 0
   })
 
   const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
   const [isClosing, setIsClosing] = useState(false)
+  const [isWindowResizing, setIsWindowResizing] = useState(false)
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() =>
     localStorage.getItem(APPEARANCE_MODE_KEY) === 'light' ? 'light' : 'dark'
   )
@@ -290,6 +294,14 @@ function App() {
   useEffect(() => {
     sourceModeRef.current = config.heartRateSourceMode
   }, [config.heartRateSourceMode])
+
+  useEffect(() => {
+    if (!shouldShowFirstRunNotice) {
+      return
+    }
+
+    void window.heartdock.showStartupView()
+  }, [shouldShowFirstRunNotice])
 
   useEffect(() => {
     if (!shouldShowFirstRunNotice) {
@@ -886,7 +898,35 @@ function App() {
       isResizing: true,
       startScreenX: event.screenX,
       startScreenY: event.screenY,
-      startBounds: bounds
+      startBounds: bounds,
+      animationFrameId: 0,
+      pendingBounds: null,
+      lastAppliedAt: 0
+    }
+
+    setIsWindowResizing(true)
+
+    const applyPendingResizeBounds = (): void => {
+      const resizeState = windowResizeStateRef.current
+      resizeState.animationFrameId = 0
+
+      if (!resizeState.isResizing || !resizeState.pendingBounds) {
+        return
+      }
+
+      const now = window.performance.now()
+      const minFrameIntervalMs = 40
+
+      if (resizeState.lastAppliedAt > 0 && now - resizeState.lastAppliedAt < minFrameIntervalMs) {
+        resizeState.animationFrameId = window.requestAnimationFrame(applyPendingResizeBounds)
+        return
+      }
+
+      const nextBounds = resizeState.pendingBounds
+      resizeState.pendingBounds = null
+      resizeState.lastAppliedAt = now
+
+      void window.heartdock.setWindowBounds(nextBounds)
     }
 
     const handleMouseMove = (moveEvent: MouseEvent): void => {
@@ -899,17 +939,34 @@ function App() {
       const deltaX = moveEvent.screenX - resizeState.startScreenX
       const deltaY = moveEvent.screenY - resizeState.startScreenY
 
-      const nextBounds: HeartDockWindowBounds = {
+      resizeState.pendingBounds = {
         ...resizeState.startBounds,
         width: resizeState.startBounds.width + deltaX,
         height: resizeState.startBounds.height + deltaY
       }
 
-      void window.heartdock.setWindowBounds(nextBounds)
+      if (resizeState.animationFrameId === 0) {
+        resizeState.animationFrameId = window.requestAnimationFrame(applyPendingResizeBounds)
+      }
     }
 
     const handleMouseUp = (): void => {
-      windowResizeStateRef.current.isResizing = false
+      const resizeState = windowResizeStateRef.current
+      resizeState.isResizing = false
+
+      if (resizeState.animationFrameId !== 0) {
+        window.cancelAnimationFrame(resizeState.animationFrameId)
+        resizeState.animationFrameId = 0
+      }
+
+      if (resizeState.pendingBounds) {
+        void window.heartdock.setWindowBounds(resizeState.pendingBounds)
+        resizeState.pendingBounds = null
+      }
+
+      resizeState.lastAppliedAt = 0
+      setIsWindowResizing(false)
+
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
@@ -1289,18 +1346,24 @@ function App() {
     setIsFirstRunNoticeLeaving(true)
 
     window.setTimeout(() => {
-      setShouldShowFirstRunNotice(false)
-      setIsFirstRunNoticeLeaving(false)
-    }, 960)
+      void window.heartdock.enterMainView().finally(() => {
+        setShouldShowFirstRunNotice(false)
+        setIsFirstRunNoticeLeaving(false)
+      })
+    }, 260)
   }
 
   const handleConfirmFirstRunNotice = (): void => {
-    if (firstRunNoticeMode === 'required' && (firstRunNoticeSecondsLeft > 0 || !firstRunNoticeAccepted)) {
+    if (firstRunNoticeMode === 'required') {
+      if (firstRunNoticeSecondsLeft > 0 || !firstRunNoticeAccepted) {
+        return
+      }
+
+      localStorage.setItem(FIRST_RUN_NOTICE_KEY, 'accepted')
+      dismissFirstRunNotice()
       return
     }
 
-    localStorage.setItem(FIRST_RUN_NOTICE_KEY, 'accepted')
-    setFirstRunNoticeMode('splash')
     dismissFirstRunNotice()
   }
 
@@ -1359,9 +1422,9 @@ function App() {
     <main
       className={`app-shell appearance-${appearanceMode} ${isPureDisplay ? 'pure-display-shell' : ''} ${
         isClosing ? 'is-closing' : ''
-      } ${shouldShowFirstRunNotice ? 'is-first-run-notice' : ''} ${
-        isFirstRunNoticeLeaving ? 'is-first-run-leaving' : ''
-      }`}
+      } ${isWindowResizing ? 'is-window-resizing' : ''} ${
+        shouldShowFirstRunNotice ? 'is-first-run-notice' : ''
+      } ${isFirstRunNoticeLeaving ? 'is-first-run-leaving' : ''}`}
     >
       {isPureDisplay ? (
         <section className="pure-display-view no-drag">
