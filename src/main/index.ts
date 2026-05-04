@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, net, protocol, screen, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, net, protocol, screen, shell, type OpenDialogOptions } from 'electron'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -45,6 +45,26 @@ const MAX_WINDOW_STATE: WindowState = {
 
 const BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
 
+const ALLOWED_EXTERNAL_URLS = new Set([
+  'https://github.com/HHS3188/heartdock',
+  'https://github.com/HHS3188/heartdock/issues/new'
+])
+
+function isAllowedExternalUrl(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  try {
+    const parsedUrl = new URL(value)
+
+    return parsedUrl.protocol === 'https:' && ALLOWED_EXTERNAL_URLS.has(parsedUrl.toString())
+  } catch {
+    return false
+  }
+}
+
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'heartdock',
@@ -60,6 +80,12 @@ protocol.registerSchemesAsPrivileged([
 
 function getWindowStatePath(): string {
   return join(app.getPath('userData'), 'window-state.json')
+}
+
+function getApplicationIconPath(): string | undefined {
+  const iconPath = join(app.getAppPath(), 'build', 'icon.ico')
+
+  return existsSync(iconPath) ? iconPath : undefined
 }
 
 function getAssetDirectory(): string {
@@ -332,6 +358,37 @@ function notifyClickThroughChanged(value: boolean): void {
   overlayWindow.webContents.send('overlay:click-through-changed', value)
 }
 
+function animateOverlayWindowOpacity(from: number, to: number, durationMs: number): void {
+  const window = overlayWindow
+
+  if (!window || window.isDestroyed()) {
+    return
+  }
+
+  const startedAt = Date.now()
+  const frameMs = 16
+  const distance = to - from
+
+  window.setOpacity(from)
+
+  const timer = setInterval(() => {
+    if (!window || window.isDestroyed()) {
+      clearInterval(timer)
+      return
+    }
+
+    const progress = Math.min((Date.now() - startedAt) / durationMs, 1)
+    const easedProgress = 1 - Math.pow(1 - progress, 3)
+
+    window.setOpacity(from + distance * easedProgress)
+
+    if (progress >= 1) {
+      window.setOpacity(to)
+      clearInterval(timer)
+    }
+  }, frameMs)
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle('overlay:set-always-on-top', (_event, value: boolean) => {
     return setOverlayAlwaysOnTop(value)
@@ -347,6 +404,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('overlay:close-window', () => {
     overlayWindow?.close()
+  })
+
+  ipcMain.handle('overlay:open-external', async (_event, url: string) => {
+    if (!isAllowedExternalUrl(url)) {
+      return false
+    }
+
+    await shell.openExternal(url)
+    return true
   })
 
   ipcMain.handle('overlay:select-display-background-image', () => {
@@ -459,6 +525,7 @@ function createOverlayWindow(): void {
     resizable: true,
     show: false,
     autoHideMenuBar: true,
+    icon: getApplicationIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
@@ -468,9 +535,12 @@ function createOverlayWindow(): void {
     }
   })
 
+  overlayWindow.setOpacity(0)
+
   overlayWindow.once('ready-to-show', () => {
     overlayWindow?.show()
     overlayWindow?.focus()
+    animateOverlayWindowOpacity(0, 1, 160)
   })
 
   overlayWindow.webContents.on('did-finish-load', () => {
@@ -539,6 +609,10 @@ function createOverlayWindow(): void {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('dev.heartdock.app')
+  }
+
   registerHeartDockProtocol()
   registerIpcHandlers()
   createOverlayWindow()

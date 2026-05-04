@@ -27,6 +27,16 @@ import {
 import { MockHeartRateSource } from './core/MockHeartRateSource'
 
 type BleConnectionStatus = 'idle' | 'connecting' | 'connected' | 'failed'
+type FirstRunNoticeMode = 'required' | 'splash'
+type AppearanceMode = 'dark' | 'light'
+
+
+const SOURCE_CODE_URL = 'https://github.com/HHS3188/heartdock'
+const FEEDBACK_URL = 'https://github.com/HHS3188/heartdock/issues/new'
+const FIRST_RUN_NOTICE_KEY = 'heartdock.firstRunNotice.v1'
+const APPEARANCE_MODE_KEY = 'heartdock.appearanceMode.v1'
+const FIRST_RUN_NOTICE_SECONDS = 15
+
 
 const colorPresetOptions = [
   '#4ade80',
@@ -77,6 +87,11 @@ const displayStylePresetOptions: Array<SelectOption<DisplayStylePreset>> = [
   { value: 'capsule', label: '圆角胶囊', description: '紧凑的圆角胶囊框，适合小尺寸悬浮。' },
   { value: 'neon', label: '霓虹直播框', description: '带弱发光边框，适合直播和录屏。' },
   { value: 'kawaii', label: '二次元贴纸风', description: '粉蓝渐变、爱心和星星点缀，偏可爱风。' }
+]
+
+const appearanceModeOptions: Array<SelectOption<AppearanceMode>> = [
+  { value: 'dark', label: '黑夜模式', description: '深色透明悬浮界面，适合桌面叠加和夜间使用。' },
+  { value: 'light', label: '日间模式', description: '浅色柔和界面，适合明亮桌面环境。' }
 ]
 
 interface BleCharacteristic {
@@ -218,6 +233,19 @@ function App() {
 
   const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
+  const [isClosing, setIsClosing] = useState(false)
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() =>
+    localStorage.getItem(APPEARANCE_MODE_KEY) === 'light' ? 'light' : 'dark'
+  )
+  const [shouldShowFirstRunNotice, setShouldShowFirstRunNotice] = useState(true)
+  const [firstRunNoticeMode, setFirstRunNoticeMode] = useState<FirstRunNoticeMode>(() =>
+    localStorage.getItem(FIRST_RUN_NOTICE_KEY) === 'accepted' ? 'splash' : 'required'
+  )
+  const [isFirstRunNoticeLeaving, setIsFirstRunNoticeLeaving] = useState(false)
+  const [firstRunNoticeSecondsLeft, setFirstRunNoticeSecondsLeft] = useState(() =>
+    localStorage.getItem(FIRST_RUN_NOTICE_KEY) === 'accepted' ? 0 : FIRST_RUN_NOTICE_SECONDS
+  )
+  const [firstRunNoticeAccepted, setFirstRunNoticeAccepted] = useState(false)
   const [manualInput, setManualInput] = useState(() =>
     String(normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   )
@@ -252,10 +280,46 @@ function App() {
   const hasDisplayFrame = effectiveDisplayStylePreset !== 'none'
   const displayStylePresetClass = `display-style-${effectiveDisplayStylePreset}`
   const displayBackgroundFitClass = `display-background-fit-${config.displayBackgroundImageFit}`
+  const firstRunNoticeTotalSeconds =
+    firstRunNoticeMode === 'required' ? FIRST_RUN_NOTICE_SECONDS : 0
+  const firstRunNoticeProgress =
+    firstRunNoticeTotalSeconds <= 0
+      ? 100
+      : ((firstRunNoticeTotalSeconds - firstRunNoticeSecondsLeft) / firstRunNoticeTotalSeconds) * 100
 
   useEffect(() => {
     sourceModeRef.current = config.heartRateSourceMode
   }, [config.heartRateSourceMode])
+
+  useEffect(() => {
+    if (!shouldShowFirstRunNotice) {
+      return
+    }
+
+    setIsFirstRunNoticeLeaving(false)
+    setFirstRunNoticeAccepted(false)
+
+    if (firstRunNoticeMode !== 'required') {
+      setFirstRunNoticeSecondsLeft(0)
+      return
+    }
+
+    const startedAt = Date.now()
+    setFirstRunNoticeSecondsLeft(FIRST_RUN_NOTICE_SECONDS)
+
+    const updateSecondsLeft = (): void => {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000)
+      const nextSecondsLeft = Math.max(0, FIRST_RUN_NOTICE_SECONDS - elapsedSeconds)
+      setFirstRunNoticeSecondsLeft(nextSecondsLeft)
+    }
+
+    updateSecondsLeft()
+    const timer = window.setInterval(updateSecondsLeft, 200)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [firstRunNoticeMode, shouldShowFirstRunNotice])
 
   useEffect(() => {
     saveConfig(config)
@@ -1217,6 +1281,60 @@ function App() {
     }
   }
 
+  const handleOpenExternalLink = (url: string): void => {
+    void window.heartdock.openExternal(url)
+  }
+
+  const dismissFirstRunNotice = (): void => {
+    setIsFirstRunNoticeLeaving(true)
+
+    window.setTimeout(() => {
+      setShouldShowFirstRunNotice(false)
+      setIsFirstRunNoticeLeaving(false)
+    }, 960)
+  }
+
+  const handleConfirmFirstRunNotice = (): void => {
+    if (firstRunNoticeMode === 'required' && (firstRunNoticeSecondsLeft > 0 || !firstRunNoticeAccepted)) {
+      return
+    }
+
+    localStorage.setItem(FIRST_RUN_NOTICE_KEY, 'accepted')
+    setFirstRunNoticeMode('splash')
+    dismissFirstRunNotice()
+  }
+
+  const handleAppearanceModeChange = (value: AppearanceMode): void => {
+    setAppearanceMode(value)
+    localStorage.setItem(APPEARANCE_MODE_KEY, value)
+  }
+
+  const handleToggleAppearanceMode = (): void => {
+    handleAppearanceModeChange(appearanceMode === 'dark' ? 'light' : 'dark')
+  }
+
+  const handleShowFirstRunNoticeAgain = (): void => {
+    localStorage.removeItem(FIRST_RUN_NOTICE_KEY)
+    setFirstRunNoticeMode('required')
+    setFirstRunNoticeAccepted(false)
+    setFirstRunNoticeSecondsLeft(FIRST_RUN_NOTICE_SECONDS)
+    setIsFirstRunNoticeLeaving(false)
+    setShouldShowFirstRunNotice(true)
+  }
+
+  const handleCloseWindow = (): void => {
+    if (isClosing) {
+      return
+    }
+
+    setIsClosing(true)
+    void window.heartdock.setClickThrough(false)
+
+    window.setTimeout(() => {
+      void window.heartdock.closeWindow()
+    }, 180)
+  }
+
   const handleResetConfig = (): void => {
     const confirmed = window.confirm('确定要重置所有显示设置吗？')
 
@@ -1238,7 +1356,13 @@ function App() {
   }
 
   return (
-    <main className={`app-shell ${isPureDisplay ? 'pure-display-shell' : ''}`}>
+    <main
+      className={`app-shell appearance-${appearanceMode} ${isPureDisplay ? 'pure-display-shell' : ''} ${
+        isClosing ? 'is-closing' : ''
+      } ${shouldShowFirstRunNotice ? 'is-first-run-notice' : ''} ${
+        isFirstRunNoticeLeaving ? 'is-first-run-leaving' : ''
+      }`}
+    >
       {isPureDisplay ? (
         <section className="pure-display-view no-drag">
           <div
@@ -1288,10 +1412,20 @@ function App() {
 
             <div className="window-actions no-drag">
               <button
+                className="icon-button appearance-toggle-button"
+                type="button"
+                title={appearanceMode === 'dark' ? '切换到日间模式' : '切换到黑夜模式'}
+                aria-label={appearanceMode === 'dark' ? '切换到日间模式' : '切换到黑夜模式'}
+                onClick={handleToggleAppearanceMode}
+              >
+                <span aria-hidden="true">{appearanceMode === 'dark' ? '☀' : '☾'}</span>
+              </button>
+
+              <button
                 className="icon-button close-button"
                 type="button"
                 title="关闭 HeartDock"
-                onClick={() => window.heartdock.closeWindow()}
+                onClick={handleCloseWindow}
               >
                 ×
               </button>
@@ -1593,6 +1727,7 @@ function App() {
                     '选择心率显示框样式'
                   )}
                 </div>
+
               </div>
 
               <label>
@@ -1668,6 +1803,47 @@ function App() {
                 开启后，鼠标点击会穿过 HeartDock，直接操作下方窗口；需要再次操作 HeartDock 时，请按 Ctrl + Shift + H 关闭。
               </p>
 
+              <div className="project-links-panel">
+                <div className="section-heading">
+                  <span>项目与反馈</span>
+                  <small>HeartDock 是完全免费、开源的桌面心率悬浮窗软件。</small>
+                </div>
+
+                <div className="project-link-grid">
+                  <button
+                    className="project-link-card"
+                    type="button"
+                    onClick={() => handleOpenExternalLink(SOURCE_CODE_URL)}
+                  >
+                    <span className="project-link-icon">⌘</span>
+                    <span>
+                      <strong>源代码 GitHub</strong>
+                      <small>查看源码、Release 和项目进度。</small>
+                    </span>
+                  </button>
+
+                  <button
+                    className="project-link-card"
+                    type="button"
+                    onClick={() => handleOpenExternalLink(FEEDBACK_URL)}
+                  >
+                    <span className="project-link-icon">↗</span>
+                    <span>
+                      <strong>反馈 Bug / 期待功能</strong>
+                      <small>打开 GitHub Issue 页面提交建议。</small>
+                    </span>
+                  </button>
+                </div>
+
+                <button
+                  className="secondary-button first-run-reset-button"
+                  type="button"
+                  onClick={handleShowFirstRunNoticeAgain}
+                >
+                  重新查看首次启动说明
+                </button>
+              </div>
+
               <button className="reset-button" type="button" onClick={handleResetConfig}>
                 重置显示设置
               </button>
@@ -1684,6 +1860,116 @@ function App() {
           </button>
         </section>
       )}
+      {shouldShowFirstRunNotice && (
+        <div
+          className={`first-run-notice-backdrop ${isFirstRunNoticeLeaving ? 'is-leaving' : ''}`}
+          role="dialog"
+          aria-modal="true"
+        >
+          <section className="first-run-notice-card">
+            <button
+              className="first-run-close-button"
+              type="button"
+              aria-label="关闭 HeartDock"
+              title="关闭 HeartDock"
+              onClick={handleCloseWindow}
+            >
+              ×
+            </button>
+
+            <div className="first-run-notice-badge">
+              <span className="brand-mark">♥</span>
+              <span>HeartDock</span>
+            </div>
+
+            <div className="first-run-notice-content">
+              <h1>欢迎使用 HeartDock</h1>
+              <p>
+                HeartDock 是一个面向 Windows 的桌面心率悬浮窗工具，当前作为完全免费、开源的软件提供。
+                你可以查看源代码、参与反馈，也可以提出你期待的新功能。
+              </p>
+
+              <p className="first-run-notice-developer">开发人员：HHS3188</p>
+
+              <div className="first-run-ble-note">
+                <strong>真实心率设备连接提示</strong>
+                <p>
+                  如果想读取真实心率，请确认手表、心率带或其他设备支持标准 BLE 心率广播，电脑支持蓝牙并已经打开。
+                  进入主界面后，将数据源切换为“BLE 心率设备（实验）”，再点击连接心率设备即可选择设备。
+                </p>
+              </div>
+
+              <div className="first-run-progress-shell" aria-hidden="true">
+                <span style={{ width: `${Math.min(100, Math.max(0, firstRunNoticeProgress))}%` }} />
+              </div>
+
+              <div className="first-run-notice-link-grid">
+                <button
+                  className="first-run-notice-link-card"
+                  type="button"
+                  onClick={() => handleOpenExternalLink(SOURCE_CODE_URL)}
+                >
+                  <strong>源代码 GitHub</strong>
+                  <small>{SOURCE_CODE_URL}</small>
+                </button>
+
+                <button
+                  className="first-run-notice-link-card"
+                  type="button"
+                  onClick={() => handleOpenExternalLink(FEEDBACK_URL)}
+                >
+                  <strong>反馈 Bug / 期待功能</strong>
+                  <small>{FEEDBACK_URL}</small>
+                </button>
+              </div>
+
+              <p className="first-run-notice-hint">
+                {firstRunNoticeMode === 'required'
+                  ? `首次启动需要等待 ${FIRST_RUN_NOTICE_SECONDS} 秒后确认阅读。后续启动会先显示本页，你可以手动进入 HeartDock。`
+                  : '欢迎回来。源码和反馈入口会长期保留在设置页面中，点击下方按钮即可进入 HeartDock。'}
+              </p>
+            </div>
+
+            <div className="first-run-notice-actions">
+              {firstRunNoticeMode === 'required' ? (
+                <>
+                  <label className={`notice-confirm-row ${firstRunNoticeSecondsLeft > 0 ? 'is-disabled' : ''}`}>
+                    <input
+                      type="checkbox"
+                      disabled={firstRunNoticeSecondsLeft > 0}
+                      checked={firstRunNoticeAccepted}
+                      onChange={(event) => setFirstRunNoticeAccepted(event.target.checked)}
+                    />
+                    <span>
+                      {firstRunNoticeSecondsLeft > 0
+                        ? `请先阅读说明，${firstRunNoticeSecondsLeft} 秒后可确认`
+                        : '我已详细阅读并理解以上说明'}
+                    </span>
+                  </label>
+
+                  <button
+                    className="primary-button first-run-enter-button"
+                    type="button"
+                    disabled={firstRunNoticeSecondsLeft > 0 || !firstRunNoticeAccepted}
+                    onClick={handleConfirmFirstRunNotice}
+                  >
+                    进入 HeartDock
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="primary-button first-run-enter-button"
+                  type="button"
+                  onClick={handleConfirmFirstRunNotice}
+                >
+                  进入 HeartDock
+                </button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
     </main>
   )
 }
