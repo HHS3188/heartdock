@@ -7,6 +7,12 @@ interface HeartDockWindowBounds {
   height: number
 }
 
+interface DisplayBackgroundImageResult {
+  assetFileName: string
+  fileName: string
+  url: string
+}
+
 interface HeartDockApi {
   setAlwaysOnTop: (enabled: boolean) => Promise<boolean>
   setClickThrough: (enabled: boolean) => Promise<boolean>
@@ -15,6 +21,7 @@ interface HeartDockApi {
   getWindowBounds: () => Promise<HeartDockWindowBounds | null>
   setWindowBounds: (bounds: HeartDockWindowBounds) => Promise<boolean>
   moveWindowBy: (deltaX: number, deltaY: number) => Promise<boolean>
+  selectDisplayBackgroundImage: () => Promise<DisplayBackgroundImageResult | null>
   onClickThroughChanged: (callback: (enabled: boolean) => void) => () => void
 }
 

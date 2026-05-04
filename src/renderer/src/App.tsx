@@ -9,7 +9,9 @@ import {
 } from 'react'
 
 import {
+  DisplayBackgroundImageFit,
   DisplayGlowLevel,
+  DisplayStylePreset,
   HeartDockConfig,
   HeartRateColorMode,
   HeartRateSourceMode,
@@ -17,6 +19,7 @@ import {
   loadConfig,
   normalizeBpm,
   normalizeColor,
+  normalizeDisplayBackgroundImageOpacity,
   normalizeDisplayText,
   normalizeRefreshIntervalMs,
   saveConfig
@@ -60,6 +63,20 @@ const glowLevelOptions: Array<SelectOption<DisplayGlowLevel>> = [
   { value: 'soft', label: '弱', description: '轻微发光。' },
   { value: 'medium', label: '中', description: '默认发光强度。' },
   { value: 'strong', label: '强', description: '更醒目的发光效果。' }
+]
+
+const backgroundImageFitOptions: Array<SelectOption<DisplayBackgroundImageFit>> = [
+  { value: 'contain', label: '完整显示', description: '完整显示图片，可能留出空白。' },
+  { value: 'cover', label: '铺满裁切', description: '铺满背景区域，边缘可能被裁切。' },
+  { value: 'stretch', label: '拉伸填满', description: '强制填满区域，可能改变图片比例。' }
+]
+
+const displayStylePresetOptions: Array<SelectOption<DisplayStylePreset>> = [
+  { value: 'none', label: '无背景', description: '只显示心率文字，适合最干净的纯享叠加。' },
+  { value: 'glass', label: '柔和玻璃卡片', description: '半透明玻璃质感，适合日常桌面。' },
+  { value: 'capsule', label: '圆角胶囊', description: '紧凑的圆角胶囊框，适合小尺寸悬浮。' },
+  { value: 'neon', label: '霓虹直播框', description: '带弱发光边框，适合直播和录屏。' },
+  { value: 'kawaii', label: '二次元贴纸风', description: '粉蓝渐变、爱心和星星点缀，偏可爱风。' }
 ]
 
 interface BleCharacteristic {
@@ -229,6 +246,12 @@ function App() {
   )
   const isPureDisplay = config.pureDisplay
   const displayGlowClass = `glow-${config.glowLevel}`
+  const hasDisplayBackgroundImage = false
+  const effectiveDisplayStylePreset =
+    config.displayStylePreset === 'image-card' ? 'none' : config.displayStylePreset
+  const hasDisplayFrame = effectiveDisplayStylePreset !== 'none'
+  const displayStylePresetClass = `display-style-${effectiveDisplayStylePreset}`
+  const displayBackgroundFitClass = `display-background-fit-${config.displayBackgroundImageFit}`
 
   useEffect(() => {
     sourceModeRef.current = config.heartRateSourceMode
@@ -251,7 +274,7 @@ function App() {
   }, [config.alwaysOnTop])
 
   useEffect(() => {
-    if (config.pureDisplay) {
+    if (config.pureDisplay && !config.clickThrough) {
       return
     }
 
@@ -259,16 +282,19 @@ function App() {
   }, [config.clickThrough, config.pureDisplay])
 
   useEffect(() => {
-    if (!config.pureDisplay) {
+    if (!config.pureDisplay || config.clickThrough) {
       return
     }
 
-    let isHeartInteractive = false
+    const setTemporaryClickThrough = (enabled: boolean): void => {
+      void window.heartdock.setClickThrough(enabled)
+    }
 
-    const updatePureDisplayHitTest = (event: MouseEvent): void => {
+    const updatePureHeartHitTest = (event: MouseEvent): void => {
       const rect = pureHeartRef.current?.getBoundingClientRect()
 
       if (!rect) {
+        setTemporaryClickThrough(true)
         return
       }
 
@@ -278,20 +304,21 @@ function App() {
         event.clientY >= rect.top &&
         event.clientY <= rect.bottom
 
-      if (isInsideHeart === isHeartInteractive) {
-        return
-      }
-
-      isHeartInteractive = isInsideHeart
-      window.heartdock.setClickThrough(!isInsideHeart)
+      setTemporaryClickThrough(!isInsideHeart)
     }
 
-    window.heartdock.setClickThrough(true)
-    window.addEventListener('mousemove', updatePureDisplayHitTest)
+    const handleWindowMouseLeave = (): void => {
+      setTemporaryClickThrough(true)
+    }
+
+    setTemporaryClickThrough(true)
+    window.addEventListener('mousemove', updatePureHeartHitTest)
+    window.addEventListener('mouseleave', handleWindowMouseLeave)
 
     return () => {
-      window.removeEventListener('mousemove', updatePureDisplayHitTest)
-      window.heartdock.setClickThrough(config.clickThrough)
+      window.removeEventListener('mousemove', updatePureHeartHitTest)
+      window.removeEventListener('mouseleave', handleWindowMouseLeave)
+      void window.heartdock.setClickThrough(config.clickThrough)
     }
   }, [config.clickThrough, config.pureDisplay])
 
@@ -472,28 +499,27 @@ function App() {
           </span>
         </button>
 
-        {isOpen && (
-          <div className="custom-select-menu" role="listbox">
-            {options.map((option) => (
-              <button
-                key={option.value}
-                className={`custom-select-option ${option.value === value ? 'is-selected' : ''}`}
-                type="button"
-                role="option"
-                aria-selected={option.value === value}
-                onClick={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  onChange(option.value)
-                  setOpenSelectId(null)
-                }}
-              >
-                <span>{option.label}</span>
-                {option.description && <small>{option.description}</small>}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="custom-select-menu" role="listbox" aria-hidden={!isOpen}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              className={`custom-select-option ${option.value === value ? 'is-selected' : ''}`}
+              type="button"
+              role="option"
+              tabIndex={isOpen ? 0 : -1}
+              aria-selected={option.value === value}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onChange(option.value)
+                setOpenSelectId(null)
+              }}
+            >
+              <span>{option.label}</span>
+              {option.description && <small>{option.description}</small>}
+            </button>
+          ))}
+        </div>
       </div>
     )
   }
@@ -606,6 +632,69 @@ function App() {
   )
 
 
+  const handleSelectDisplayBackgroundImage = async (): Promise<void> => {
+    try {
+      const result = await window.heartdock.selectDisplayBackgroundImage()
+
+      if (!result) {
+        return
+      }
+
+      setConfig((current) => ({
+        ...current,
+        displayBackgroundImageEnabled: true,
+        displayBackgroundImageUrl: result.url,
+        displayBackgroundImageAssetFileName: result.assetFileName,
+        displayBackgroundImageName: result.fileName,
+        displayStylePreset: 'image-card'
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '选择背景图片失败。'
+      window.alert(message)
+    }
+  }
+
+  const handleClearDisplayBackgroundImage = (): void => {
+    setConfig((current) => ({
+      ...current,
+      displayBackgroundImageEnabled: false,
+      displayBackgroundImageUrl: '',
+      displayBackgroundImageAssetFileName: '',
+      displayBackgroundImageName: '',
+      displayStylePreset: current.displayStylePreset === 'image-card' ? 'none' : current.displayStylePreset
+    }))
+  }
+
+  const handleDisplayBackgroundImageEnabledChange = (enabled: boolean): void => {
+    if (enabled && !config.displayBackgroundImageUrl) {
+      void handleSelectDisplayBackgroundImage()
+      return
+    }
+
+    updateConfig('displayBackgroundImageEnabled', enabled)
+  }
+
+  const handleDisplayBackgroundImageOpacityChange = (value: number): void => {
+    updateConfig('displayBackgroundImageOpacity', normalizeDisplayBackgroundImageOpacity(value))
+  }
+
+  const renderDisplayBackgroundImageLayer = () => {
+    if (!hasDisplayBackgroundImage) {
+      return null
+    }
+
+    return (
+      <span
+        className="display-background-image"
+        aria-hidden="true"
+        style={{
+          backgroundImage: `url("${config.displayBackgroundImageUrl}")`,
+          opacity: config.displayBackgroundImageOpacity
+        }}
+      />
+    )
+  }
+
   const handleTogglePureDisplay = async (): Promise<void> => {
     if (!config.pureDisplay) {
       normalWindowBoundsRef.current = await window.heartdock.getWindowBounds()
@@ -685,11 +774,24 @@ function App() {
       void window.heartdock.moveWindowBy(deltaX, deltaY)
     }
 
-    const handleMouseUp = (): void => {
+    const handleMouseUp = (upEvent: MouseEvent): void => {
       pureDragStateRef.current.isDragging = false
 
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
+
+      if (config.pureDisplay && !config.clickThrough) {
+        const rect = pureHeartRef.current?.getBoundingClientRect()
+        const isInsideHeart = Boolean(
+          rect &&
+            upEvent.clientX >= rect.left &&
+            upEvent.clientX <= rect.right &&
+            upEvent.clientY >= rect.top &&
+            upEvent.clientY <= rect.bottom
+        )
+
+        void window.heartdock.setClickThrough(!isInsideHeart)
+      }
 
       window.setTimeout(() => {
         pureDragMovedRef.current = false
@@ -773,7 +875,7 @@ function App() {
       return
     }
 
-    const characteristic = event.target as BleCharacteristic | null
+    const characteristic = event.target as unknown as BleCharacteristic | null
     const value = characteristic?.value
 
     if (!value) {
@@ -1098,6 +1200,17 @@ function App() {
     updateConfig('refreshIntervalMs', nextRefreshIntervalMs)
   }
 
+  const handleRefreshIntervalStep = (delta: number): void => {
+    const parsed = Number(refreshIntervalInput.trim())
+    const currentValue = Number.isFinite(parsed)
+      ? normalizeRefreshIntervalMs(parsed)
+      : normalizeRefreshIntervalMs(config.refreshIntervalMs)
+    const nextRefreshIntervalMs = normalizeRefreshIntervalMs(currentValue + delta)
+
+    setRefreshIntervalInput(String(nextRefreshIntervalMs))
+    updateConfig('refreshIntervalMs', nextRefreshIntervalMs)
+  }
+
   const handleRefreshIntervalKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'Enter') {
       applyRefreshIntervalMs()
@@ -1129,27 +1242,33 @@ function App() {
       {isPureDisplay ? (
         <section className="pure-display-view no-drag">
           <div
-            ref={pureHeartRef}
-            className={`pure-heart-row heart-display-row ${displayGlowClass}`}
-            title="按住拖动位置，双击退出纯享模式"
-            onMouseDown={handlePureDisplayMouseDown}
-            onDoubleClick={handlePureDisplayDoubleClick}
-            onMouseEnter={() => window.heartdock.setClickThrough(false)}
-            onMouseLeave={() => {
-              if (!pureDragStateRef.current.isDragging) {
-                window.heartdock.setClickThrough(true)
-              }
-            }}
+            className={`display-background-frame pure-display-frame ${displayStylePresetClass} ${
+              hasDisplayFrame ? 'has-display-frame' : ''
+            } ${hasDisplayBackgroundImage ? 'has-display-background' : ''} ${displayBackgroundFitClass}`}
           >
-            {config.prefixText && (
-              <span className="heart prefix-text pure-heart" style={{ color: bpmColor }}>
-                {config.prefixText}
+            {renderDisplayBackgroundImageLayer()}
+            <div
+              ref={pureHeartRef}
+              className={`pure-heart-row heart-display-row ${displayGlowClass}`}
+              aria-label="按住拖动位置，双击退出纯享模式"
+              onMouseDown={handlePureDisplayMouseDown}
+              onMouseLeave={() => {
+                if (config.pureDisplay && !config.clickThrough) {
+                  void window.heartdock.setClickThrough(true)
+                }
+              }}
+              onDoubleClick={handlePureDisplayDoubleClick}
+            >
+              {config.prefixText && (
+                <span className="heart prefix-text pure-heart" style={{ color: bpmColor }}>
+                  {config.prefixText}
+                </span>
+              )}
+              <span className="bpm pure-bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
+                {displayBpm}
               </span>
-            )}
-            <span className="bpm pure-bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
-              {displayBpm}
-            </span>
-            {config.unitText && <span className="unit pure-unit">{config.unitText}</span>}
+              {config.unitText && <span className="unit pure-unit">{config.unitText}</span>}
+            </div>
           </div>
         </section>
       ) : (
@@ -1179,16 +1298,23 @@ function App() {
             </div>
           </div>
 
-          <div className={`heart-row heart-display-row ${displayGlowClass}`}>
-            {config.prefixText && (
-              <span className="heart prefix-text" style={{ color: bpmColor }}>
-                {config.prefixText}
+          <div
+            className={`display-background-frame normal-display-frame ${displayStylePresetClass} ${
+              hasDisplayFrame ? 'has-display-frame' : ''
+            } ${hasDisplayBackgroundImage ? 'has-display-background' : ''} ${displayBackgroundFitClass}`}
+          >
+            {renderDisplayBackgroundImageLayer()}
+            <div className={`heart-row heart-display-row ${displayGlowClass}`}>
+              {config.prefixText && (
+                <span className="heart prefix-text" style={{ color: bpmColor }}>
+                  {config.prefixText}
+                </span>
+              )}
+              <span className="bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
+                {displayBpm}
               </span>
-            )}
-            <span className="bpm" style={{ color: bpmColor, fontSize: config.fontSize }}>
-              {displayBpm}
-            </span>
-            {config.unitText && <span className="unit">{config.unitText}</span>}
+              {config.unitText && <span className="unit">{config.unitText}</span>}
+            </div>
           </div>
 
           {config.showSettings && (
@@ -1356,6 +1482,7 @@ function App() {
                   />
                 </label>
 
+
                 <div className="setting-field">
                   <span className="field-label">颜色模式</span>
                   {renderCustomSelect(
@@ -1451,6 +1578,23 @@ function App() {
                 </p>
               </div>
 
+              <div className="settings-section">
+                <div className="section-heading">
+                  <span>显示框样式</span>
+                </div>
+
+                <div className="setting-field">
+                  <span className="field-label">显示样式</span>
+                  {renderCustomSelect(
+                    'display-style-preset',
+                    config.displayStylePreset === 'image-card' ? 'none' : config.displayStylePreset,
+                    displayStylePresetOptions,
+                    (value) => updateConfig('displayStylePreset', value),
+                    '选择心率显示框样式'
+                  )}
+                </div>
+              </div>
+
               <label>
                 字体大小
                 <input
@@ -1464,16 +1608,51 @@ function App() {
 
               <label>
                 模拟心率刷新间隔 ms
-                <input
-                  type="number"
-                  min="250"
-                  max="10000"
-                  step="250"
-                  value={refreshIntervalInput}
-                  onChange={(event) => setRefreshIntervalInput(event.target.value)}
-                  onBlur={applyRefreshIntervalMs}
-                  onKeyDown={handleRefreshIntervalKeyDown}
-                />
+                <div className="range-field refresh-interval-field" aria-label="模拟心率刷新间隔">
+                  <input
+                    className="range-value-input refresh-interval-input"
+                    type="text"
+                    inputMode="numeric"
+                    value={refreshIntervalInput}
+                    onChange={(event) => {
+                      const nextValue = event.target.value.trim()
+
+                      if (/^\d{0,5}$/.test(nextValue)) {
+                        setRefreshIntervalInput(nextValue)
+                      }
+                    }}
+                    onBlur={applyRefreshIntervalMs}
+                    onKeyDown={handleRefreshIntervalKeyDown}
+                  />
+
+                  <div className="range-action-row refresh-interval-actions">
+                    <button
+                      className="range-action-button"
+                      type="button"
+                      aria-label="减少 250 毫秒"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleRefreshIntervalStep(-250)
+                      }}
+                    >
+                      −250
+                    </button>
+
+                    <button
+                      className="range-action-button"
+                      type="button"
+                      aria-label="增加 250 毫秒"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleRefreshIntervalStep(250)
+                      }}
+                    >
+                      +250
+                    </button>
+                  </div>
+                </div>
               </label>
 
               <p className="hint">

@@ -7,6 +7,12 @@ interface HeartDockWindowBounds {
   height: number
 }
 
+interface DisplayBackgroundImageResult {
+  assetFileName: string
+  fileName: string
+  url: string
+}
+
 contextBridge.exposeInMainWorld('heartdock', {
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.invoke('overlay:set-always-on-top', enabled),
   setClickThrough: (enabled: boolean) => ipcRenderer.invoke('overlay:set-click-through', enabled),
@@ -17,6 +23,8 @@ contextBridge.exposeInMainWorld('heartdock', {
     ipcRenderer.invoke('overlay:set-window-bounds', bounds),
   moveWindowBy: (deltaX: number, deltaY: number) =>
     ipcRenderer.invoke('overlay:move-window-by', deltaX, deltaY),
+  selectDisplayBackgroundImage: (): Promise<DisplayBackgroundImageResult | null> =>
+    ipcRenderer.invoke('overlay:select-display-background-image'),
   onClickThroughChanged: (callback: (enabled: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => callback(enabled)
     ipcRenderer.on('overlay:click-through-changed', listener)

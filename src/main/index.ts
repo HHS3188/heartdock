@@ -1,6 +1,7 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, net, protocol, screen, type OpenDialogOptions } from 'electron'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, extname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 interface WindowState {
   width: number
@@ -14,6 +15,12 @@ interface WindowBounds {
   y: number
   width: number
   height: number
+}
+
+interface DisplayBackgroundImageResult {
+  assetFileName: string
+  fileName: string
+  url: string
 }
 
 let overlayWindow: BrowserWindow | null = null
@@ -36,8 +43,116 @@ const MAX_WINDOW_STATE: WindowState = {
   height: 900
 }
 
+const BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'heartdock',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+      stream: true
+    }
+  }
+])
+
 function getWindowStatePath(): string {
   return join(app.getPath('userData'), 'window-state.json')
+}
+
+function getAssetDirectory(): string {
+  return join(app.getPath('userData'), 'assets')
+}
+
+function getDisplayBackgroundImageUrl(assetFileName: string): string {
+  return 'heartdock://asset/' + encodeURIComponent(assetFileName)
+}
+
+function isSupportedBackgroundImagePath(filePath: string): boolean {
+  return BACKGROUND_IMAGE_EXTENSIONS.has(extname(filePath).toLowerCase())
+}
+
+function getSafeAssetFileName(filePath: string): string {
+  const extension = extname(filePath).toLowerCase()
+  const rawName = basename(filePath, extension)
+  const safeName =
+    rawName
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'background'
+
+  return safeName + '-' + Date.now() + extension
+}
+
+function registerHeartDockProtocol(): void {
+  protocol.handle('heartdock', (request) => {
+    const parsedUrl = new URL(request.url)
+
+    if (parsedUrl.hostname !== 'asset') {
+      return new Response('Not found', { status: 404 })
+    }
+
+    const assetFileName = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, ''))
+
+    if (
+      !assetFileName ||
+      basename(assetFileName) !== assetFileName ||
+      !BACKGROUND_IMAGE_EXTENSIONS.has(extname(assetFileName).toLowerCase())
+    ) {
+      return new Response('Bad request', { status: 400 })
+    }
+
+    const filePath = join(getAssetDirectory(), assetFileName)
+
+    if (!existsSync(filePath)) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    return net.fetch(pathToFileURL(filePath).toString())
+  })
+}
+
+async function selectDisplayBackgroundImage(): Promise<DisplayBackgroundImageResult | null> {
+  const dialogOptions: OpenDialogOptions = {
+    title: '选择心率背景图片',
+    properties: ['openFile'],
+    filters: [
+      {
+        name: '图片文件',
+        extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif']
+      }
+    ]
+  }
+
+  const result = overlayWindow
+    ? await dialog.showOpenDialog(overlayWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions)
+
+  if (result.canceled || !result.filePaths[0]) {
+    return null
+  }
+
+  const sourcePath = result.filePaths[0]
+
+  if (!isSupportedBackgroundImagePath(sourcePath)) {
+    throw new Error('不支持的图片格式。请选择 png、jpg、jpeg、webp 或 gif 图片。')
+  }
+
+  const assetDirectory = getAssetDirectory()
+  mkdirSync(assetDirectory, { recursive: true })
+
+  const assetFileName = getSafeAssetFileName(sourcePath)
+  const targetPath = join(assetDirectory, assetFileName)
+
+  copyFileSync(sourcePath, targetPath)
+
+  return {
+    assetFileName,
+    fileName: basename(sourcePath),
+    url: getDisplayBackgroundImageUrl(assetFileName)
+  }
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -234,6 +349,10 @@ function registerIpcHandlers(): void {
     overlayWindow?.close()
   })
 
+  ipcMain.handle('overlay:select-display-background-image', () => {
+    return selectDisplayBackgroundImage()
+  })
+
   ipcMain.handle('overlay:move-window-by', (_event, deltaX: number, deltaY: number) => {
     if (!overlayWindow || overlayWindow.isDestroyed()) {
       return false
@@ -307,7 +426,6 @@ function registerIpcHandlers(): void {
     }
   )
 
-
   ipcMain.handle('set-always-on-top', (_event, value: boolean) => {
     return setOverlayAlwaysOnTop(value)
   })
@@ -358,7 +476,7 @@ function createOverlayWindow(): void {
   overlayWindow.webContents.on('did-finish-load', () => {
     console.log('[HeartDock] renderer loaded')
   })
-  
+
   overlayWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
     event.preventDefault()
 
@@ -421,6 +539,7 @@ function createOverlayWindow(): void {
 }
 
 app.whenReady().then(() => {
+  registerHeartDockProtocol()
   registerIpcHandlers()
   createOverlayWindow()
 
