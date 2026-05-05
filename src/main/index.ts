@@ -25,6 +25,7 @@ interface DisplayBackgroundImageResult {
 
 let overlayWindow: BrowserWindow | null = null
 let clickThrough = false
+let lastClickThroughChangeTs = 0
 let isStartupView = true
 let saveWindowStateTimer: ReturnType<typeof setTimeout> | null = null
 let bluetoothSelectionTimer: ReturnType<typeof setTimeout> | null = null
@@ -422,7 +423,17 @@ function setOverlayAlwaysOnTop(value: boolean): boolean {
 }
 
 function setOverlayClickThrough(value: boolean): boolean {
+  if (value === clickThrough) {
+    return value
+  }
+
+  const now = Date.now()
+  if (now - lastClickThroughChangeTs < 200) {
+    return clickThrough
+  }
+
   clickThrough = value
+  lastClickThroughChangeTs = now
 
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     return value
