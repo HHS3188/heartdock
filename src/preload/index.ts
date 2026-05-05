@@ -16,6 +16,8 @@ interface DisplayBackgroundImageResult {
 contextBridge.exposeInMainWorld('heartdock', {
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.invoke('overlay:set-always-on-top', enabled),
   setClickThrough: (enabled: boolean) => ipcRenderer.invoke('overlay:set-click-through', enabled),
+  setHitTestPassthrough: (enabled: boolean) =>
+    ipcRenderer.invoke('overlay:set-hit-test-passthrough', enabled),
   getClickThrough: () => ipcRenderer.invoke('overlay:get-click-through'),
   closeWindow: () => ipcRenderer.invoke('overlay:close-window'),
   showStartupView: (): Promise<boolean> => ipcRenderer.invoke('overlay:show-startup-view'),
