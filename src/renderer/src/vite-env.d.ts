@@ -16,6 +16,7 @@ interface DisplayBackgroundImageResult {
 interface HeartDockApi {
   setAlwaysOnTop: (enabled: boolean) => Promise<boolean>
   setClickThrough: (enabled: boolean) => Promise<boolean>
+  setHitTestPassthrough: (enabled: boolean) => Promise<boolean>
   getClickThrough: () => Promise<boolean>
   closeWindow: () => Promise<void>
   showStartupView: () => Promise<boolean>

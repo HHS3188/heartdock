@@ -6,7 +6,7 @@
 
 
 
-HeartDock 使用 Electron 主要是为了快速实现 Windows 桌面悬浮窗、透明窗口、点击穿透、BLE 心率读取和本地桌面交互。Electron 开发效率高，但在透明窗口、窗口缩放、依赖下载和安全边界方面有一些需要长期注意的地方。
+HeartDock 使用 Electron 主要是为了快速实现 Windows 桌面悬浮窗、透明窗口、鼠标禁止交互、纯享模式局部 hit-test、BLE 心率读取和本地桌面交互。Electron 开发效率高，但在透明窗口、窗口缩放、依赖下载和安全边界方面有一些需要长期注意的地方。
 
 
 
@@ -49,4 +49,3 @@ hasShadow: false,
 alwaysOnTop: true,
 
 resizable: true
-

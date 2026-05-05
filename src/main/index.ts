@@ -25,7 +25,9 @@ interface DisplayBackgroundImageResult {
 
 let overlayWindow: BrowserWindow | null = null
 let clickThrough = false
-let lastClickThroughChangeTs = 0
+let hitTestPassthrough = false
+let clickThroughHotkeyLocked = false
+let clickThroughHotkeyUnlockTimer: ReturnType<typeof setTimeout> | null = null
 let isStartupView = true
 let saveWindowStateTimer: ReturnType<typeof setTimeout> | null = null
 let bluetoothSelectionTimer: ReturnType<typeof setTimeout> | null = null
@@ -422,25 +424,13 @@ function setOverlayAlwaysOnTop(value: boolean): boolean {
   return value
 }
 
-function setOverlayClickThrough(value: boolean): boolean {
-  if (value === clickThrough) {
-    return value
-  }
-
-  const now = Date.now()
-  if (now - lastClickThroughChangeTs < 200) {
-    return clickThrough
-  }
-
-  clickThrough = value
-  lastClickThroughChangeTs = now
-
+function applyMouseIgnoreState(): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) {
-    return value
+    return
   }
 
   try {
-    if (value) {
+    if (!clickThrough && hitTestPassthrough) {
       overlayWindow.setIgnoreMouseEvents(true, { forward: true })
     } else {
       overlayWindow.setIgnoreMouseEvents(false)
@@ -448,8 +438,34 @@ function setOverlayClickThrough(value: boolean): boolean {
   } catch (error) {
     console.error('[HeartDock] failed to update click-through:', error)
   }
+}
 
+function setOverlayClickThrough(value: boolean): boolean {
+  if (value === clickThrough) {
+    return value
+  }
+
+  clickThrough = value
+
+  if (clickThrough) {
+    hitTestPassthrough = false
+  }
+
+  applyMouseIgnoreState()
   return value
+}
+
+function setOverlayHitTestPassthrough(value: boolean): boolean {
+  const nextValue = clickThrough ? false : value
+
+  if (nextValue === hitTestPassthrough) {
+    return nextValue
+  }
+
+  hitTestPassthrough = nextValue
+  applyMouseIgnoreState()
+
+  return nextValue
 }
 
 function notifyClickThroughChanged(value: boolean): void {
@@ -497,6 +513,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('overlay:set-click-through', (_event, value: boolean) => {
     return setOverlayClickThrough(value)
+  })
+
+  ipcMain.handle('overlay:set-hit-test-passthrough', (_event, value: boolean) => {
+    return setOverlayHitTestPassthrough(value)
   })
 
   ipcMain.handle('overlay:get-click-through', () => {
@@ -609,9 +629,33 @@ function registerIpcHandlers(): void {
     return setOverlayClickThrough(value)
   })
 
+  ipcMain.handle('set-hit-test-passthrough', (_event, value: boolean) => {
+    return setOverlayHitTestPassthrough(value)
+  })
+
   ipcMain.handle('get-click-through', () => {
     return clickThrough
   })
+}
+
+function unlockClickThroughHotkey(): void {
+  if (clickThroughHotkeyUnlockTimer) {
+    clearTimeout(clickThroughHotkeyUnlockTimer)
+    clickThroughHotkeyUnlockTimer = null
+  }
+
+  clickThroughHotkeyLocked = false
+}
+
+function scheduleClickThroughHotkeyUnlock(): void {
+  if (clickThroughHotkeyUnlockTimer) {
+    clearTimeout(clickThroughHotkeyUnlockTimer)
+  }
+
+  clickThroughHotkeyUnlockTimer = setTimeout(() => {
+    clickThroughHotkeyUnlockTimer = null
+    clickThroughHotkeyLocked = false
+  }, 1200)
 }
 
 function createOverlayWindow(): void {
@@ -728,12 +772,29 @@ app.whenReady().then(() => {
   createOverlayWindow()
 
   globalShortcut.register('CommandOrControl+Shift+H', () => {
-    const nextValue = !clickThrough
-    setOverlayClickThrough(nextValue)
-    notifyClickThroughChanged(nextValue)
+    if (clickThroughHotkeyLocked) {
+      scheduleClickThroughHotkeyUnlock()
+      return
+    }
 
-    console.log('[HeartDock] click-through:', nextValue)
+    clickThroughHotkeyLocked = true
+    scheduleClickThroughHotkeyUnlock()
+
+    const nextValue = !clickThrough
+    const applied = setOverlayClickThrough(nextValue)
+    if (applied === nextValue) {
+      notifyClickThroughChanged(nextValue)
+      console.log('[HeartDock] click-through:', nextValue)
+    }
   })
+
+  if (overlayWindow) {
+    overlayWindow.webContents.on('before-input-event', (_event, input) => {
+      if (input.type === 'keyUp' && (input.key === 'Control' || input.key === 'Shift' || input.key === 'h' || input.key === 'H')) {
+        unlockClickThroughHotkey()
+      }
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -749,5 +810,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  unlockClickThroughHotkey()
   globalShortcut.unregisterAll()
 })

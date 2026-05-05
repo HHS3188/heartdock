@@ -224,6 +224,7 @@ function App() {
   })
 
   const pureDragMovedRef = useRef(false)
+  const interactionLockNoticeTimerRef = useRef<number | null>(null)
   const windowResizeStateRef = useRef({
     isResizing: false,
     startScreenX: 0,
@@ -236,6 +237,9 @@ function App() {
 
   const [bpm, setBpm] = useState(() => normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   const [config, setConfig] = useState<HeartDockConfig>(() => initialConfigRef.current ?? loadConfig())
+  const configRef = useRef(config)
+  configRef.current = config
+  const [isInteractionLockNoticeVisible, setIsInteractionLockNoticeVisible] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
   const [isWindowResizing, setIsWindowResizing] = useState(false)
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() =>
@@ -350,12 +354,8 @@ function App() {
   }, [config.alwaysOnTop])
 
   useEffect(() => {
-    if (config.pureDisplay && !config.clickThrough) {
-      return
-    }
-
     window.heartdock.setClickThrough(config.clickThrough)
-  }, [config.clickThrough, config.pureDisplay])
+  }, [config.clickThrough])
 
   useEffect(() => {
     if (!config.pureDisplay || config.clickThrough) {
@@ -369,7 +369,7 @@ function App() {
         return
       }
       lastSentClickThrough = enabled
-      void window.heartdock.setClickThrough(enabled)
+      void window.heartdock.setHitTestPassthrough(enabled)
     }
 
     const updatePureHeartHitTest = (event: MouseEvent): void => {
@@ -400,7 +400,7 @@ function App() {
     return () => {
       window.removeEventListener('mousemove', updatePureHeartHitTest)
       window.removeEventListener('mouseleave', handleWindowMouseLeave)
-      void window.heartdock.setClickThrough(config.clickThrough)
+      void window.heartdock.setHitTestPassthrough(false)
     }
   }, [config.clickThrough, config.pureDisplay])
 
@@ -410,6 +410,14 @@ function App() {
     })
 
     return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (interactionLockNoticeTimerRef.current !== null) {
+        window.clearTimeout(interactionLockNoticeTimerRef.current)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -806,7 +814,7 @@ function App() {
   }
 
   const handlePureDisplayDoubleClick = (): void => {
-    if (pureDragMovedRef.current) {
+    if (pureDragMovedRef.current || configRef.current.clickThrough) {
       return
     }
 
@@ -814,7 +822,7 @@ function App() {
   }
 
   const handlePureDisplayMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
-    if (event.button !== 0) {
+    if (event.button !== 0 || configRef.current.clickThrough) {
       return
     }
 
@@ -828,7 +836,7 @@ function App() {
       totalDeltaY: 0
     }
 
-    window.heartdock.setClickThrough(false)
+    window.heartdock.setHitTestPassthrough(false)
 
     const handleMouseMove = (moveEvent: MouseEvent): void => {
       const dragState = pureDragStateRef.current
@@ -862,7 +870,9 @@ function App() {
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
 
-      if (config.pureDisplay && !config.clickThrough) {
+      const latestConfig = configRef.current
+
+      if (latestConfig.pureDisplay && !latestConfig.clickThrough) {
         const rect = pureHeartRef.current?.getBoundingClientRect()
         const isInsideHeart = Boolean(
           rect &&
@@ -872,7 +882,7 @@ function App() {
             upEvent.clientY <= rect.bottom
         )
 
-        void window.heartdock.setClickThrough(!isInsideHeart)
+        void window.heartdock.setHitTestPassthrough(!isInsideHeart)
       }
 
       window.setTimeout(() => {
@@ -1397,11 +1407,31 @@ function App() {
     }
 
     setIsClosing(true)
+    void window.heartdock.setHitTestPassthrough(false)
     void window.heartdock.setClickThrough(false)
 
     window.setTimeout(() => {
       void window.heartdock.closeWindow()
     }, 180)
+  }
+
+  const showInteractionLockNotice = useCallback((): void => {
+    setIsInteractionLockNoticeVisible(true)
+
+    if (interactionLockNoticeTimerRef.current !== null) {
+      window.clearTimeout(interactionLockNoticeTimerRef.current)
+    }
+
+    interactionLockNoticeTimerRef.current = window.setTimeout(() => {
+      interactionLockNoticeTimerRef.current = null
+      setIsInteractionLockNoticeVisible(false)
+    }, 2200)
+  }, [])
+
+  const handleInteractionLockMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    showInteractionLockNotice()
   }
 
   const handleResetConfig = (): void => {
@@ -1430,8 +1460,30 @@ function App() {
         isClosing ? 'is-closing' : ''
       } ${isWindowResizing ? 'is-window-resizing' : ''} ${
         shouldShowFirstRunNotice ? 'is-first-run-notice' : ''
-      } ${isFirstRunNoticeLeaving ? 'is-first-run-leaving' : ''}`}
+      } ${isFirstRunNoticeLeaving ? 'is-first-run-leaving' : ''} ${
+        config.clickThrough ? 'is-interaction-locked' : ''
+      }`}
     >
+      {config.clickThrough && (
+        <div
+          className="interaction-lock-layer no-drag"
+          onMouseDown={handleInteractionLockMouseDown}
+          onMouseUp={handleInteractionLockMouseDown}
+          onClick={handleInteractionLockMouseDown}
+          onDoubleClick={handleInteractionLockMouseDown}
+        >
+          <div
+            className={`interaction-lock-toast ${
+              isInteractionLockNoticeVisible ? 'is-visible' : ''
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            <strong>当前处于禁止交互状态</strong>
+            <span>按 Ctrl + Shift + H 解锁 HeartDock。</span>
+          </div>
+        </div>
+      )}
       {isPureDisplay ? (
         <section className="pure-display-view no-drag">
           <div
@@ -1446,8 +1498,10 @@ function App() {
               aria-label="按住拖动位置，双击退出纯享模式"
               onMouseDown={handlePureDisplayMouseDown}
               onMouseLeave={() => {
-                if (config.pureDisplay && !config.clickThrough) {
-                  void window.heartdock.setClickThrough(true)
+                const latestConfig = configRef.current
+
+                if (latestConfig.pureDisplay && !latestConfig.clickThrough) {
+                  void window.heartdock.setHitTestPassthrough(true)
                 }
               }}
               onDoubleClick={handlePureDisplayDoubleClick}
@@ -1864,12 +1918,12 @@ function App() {
               </p>
 
               <div className="click-through-status">
-                <span>鼠标穿透交互</span>
+                <span>鼠标禁止交互</span>
                 <strong>{config.clickThrough ? '已开启' : '已关闭'}</strong>
               </div>
 
               <p className="hint">
-                开启后，鼠标点击会穿过 HeartDock，直接操作下方窗口；需要再次操作 HeartDock 时，请按 Ctrl + Shift + H 关闭。
+                开启后，HeartDock 会拦截鼠标点击，不会操作 HeartDock，也不会点到底层窗口；需要再次操作时，请按 Ctrl + Shift + H 解锁。
               </p>
 
               <div className="project-links-panel">
