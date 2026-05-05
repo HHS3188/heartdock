@@ -362,7 +362,13 @@ function App() {
       return
     }
 
-    const setTemporaryClickThrough = (enabled: boolean): void => {
+    let lastSentClickThrough: boolean | null = null
+
+    const applyClickThrough = (enabled: boolean): void => {
+      if (enabled === lastSentClickThrough) {
+        return
+      }
+      lastSentClickThrough = enabled
       void window.heartdock.setClickThrough(enabled)
     }
 
@@ -370,7 +376,7 @@ function App() {
       const rect = pureHeartRef.current?.getBoundingClientRect()
 
       if (!rect) {
-        setTemporaryClickThrough(true)
+        applyClickThrough(true)
         return
       }
 
@@ -380,14 +386,14 @@ function App() {
         event.clientY >= rect.top &&
         event.clientY <= rect.bottom
 
-      setTemporaryClickThrough(!isInsideHeart)
+      applyClickThrough(!isInsideHeart)
     }
 
     const handleWindowMouseLeave = (): void => {
-      setTemporaryClickThrough(true)
+      applyClickThrough(true)
     }
 
-    setTemporaryClickThrough(true)
+    applyClickThrough(true)
     window.addEventListener('mousemove', updatePureHeartHitTest)
     window.addEventListener('mouseleave', handleWindowMouseLeave)
 
