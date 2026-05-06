@@ -19,6 +19,7 @@ import {
   loadConfig,
   normalizeBpm,
   normalizeColor,
+  normalizeConfig,
   normalizeDisplayBackgroundImageOpacity,
   normalizeDisplayText,
   normalizeRefreshIntervalMs,
@@ -86,7 +87,10 @@ const displayStylePresetOptions: Array<SelectOption<DisplayStylePreset>> = [
   { value: 'glass', label: '柔和玻璃卡片', description: '半透明玻璃质感，适合日常桌面。' },
   { value: 'capsule', label: '圆角胶囊', description: '紧凑的圆角胶囊框，适合小尺寸悬浮。' },
   { value: 'neon', label: '霓虹直播框', description: '带弱发光边框，适合直播和录屏。' },
-  { value: 'kawaii', label: '二次元贴纸风', description: '粉蓝渐变、爱心和星星点缀，偏可爱风。' }
+  { value: 'kawaii', label: '二次元贴纸风', description: '粉蓝渐变、爱心和星星点缀，偏可爱风。' },
+  { value: 'aurora', label: '极光流光框', description: '冷暖光带边框，适合深色全屏叠加。' },
+  { value: 'mono', label: '极简描边框', description: '低开销细线框，适合游戏和长期显示。' },
+  { value: 'heartbeat', label: '心电监护框', description: '监护仪风格网格和心电线，适合运动数据展示。' }
 ]
 
 const appearanceModeOptions: Array<SelectOption<AppearanceMode>> = [
@@ -194,6 +198,14 @@ function getBleDeviceDisplayName(device: BleDevice): string {
   return cleanedName
 }
 
+function getImportedConfigCandidate(payload: unknown): unknown {
+  if (payload && typeof payload === 'object' && 'config' in payload) {
+    return (payload as { config?: unknown }).config
+  }
+
+  return payload
+}
+
 function App() {
   const initialConfigRef = useRef<HeartDockConfig | null>(null)
 
@@ -220,7 +232,10 @@ function App() {
     lastScreenX: 0,
     lastScreenY: 0,
     totalDeltaX: 0,
-    totalDeltaY: 0
+    totalDeltaY: 0,
+    animationFrameId: 0,
+    pendingDeltaX: 0,
+    pendingDeltaY: 0
   })
 
   const pureDragMovedRef = useRef(false)
@@ -352,6 +367,14 @@ function App() {
   useEffect(() => {
     window.heartdock.setAlwaysOnTop(config.alwaysOnTop)
   }, [config.alwaysOnTop])
+
+  useEffect(() => {
+    void window.heartdock.setPureDisplayTopmost(config.pureDisplay && config.alwaysOnTop)
+
+    return () => {
+      void window.heartdock.setPureDisplayTopmost(false)
+    }
+  }, [config.alwaysOnTop, config.pureDisplay])
 
   useEffect(() => {
     window.heartdock.setClickThrough(config.clickThrough)
@@ -833,10 +856,36 @@ function App() {
       lastScreenX: event.screenX,
       lastScreenY: event.screenY,
       totalDeltaX: 0,
-      totalDeltaY: 0
+      totalDeltaY: 0,
+      animationFrameId: 0,
+      pendingDeltaX: 0,
+      pendingDeltaY: 0
     }
 
     window.heartdock.setHitTestPassthrough(false)
+
+    const applyPendingPureDrag = (): void => {
+      const dragState = pureDragStateRef.current
+      dragState.animationFrameId = 0
+
+      if (!dragState.isDragging) {
+        dragState.pendingDeltaX = 0
+        dragState.pendingDeltaY = 0
+        return
+      }
+
+      const deltaX = dragState.pendingDeltaX
+      const deltaY = dragState.pendingDeltaY
+
+      if (deltaX === 0 && deltaY === 0) {
+        return
+      }
+
+      dragState.pendingDeltaX = 0
+      dragState.pendingDeltaY = 0
+
+      void window.heartdock.moveWindowBy(deltaX, deltaY)
+    }
 
     const handleMouseMove = (moveEvent: MouseEvent): void => {
       const dragState = pureDragStateRef.current
@@ -861,11 +910,28 @@ function App() {
         pureDragMovedRef.current = true
       }
 
-      void window.heartdock.moveWindowBy(deltaX, deltaY)
+      dragState.pendingDeltaX += deltaX
+      dragState.pendingDeltaY += deltaY
+
+      if (dragState.animationFrameId === 0) {
+        dragState.animationFrameId = window.requestAnimationFrame(applyPendingPureDrag)
+      }
     }
 
     const handleMouseUp = (upEvent: MouseEvent): void => {
-      pureDragStateRef.current.isDragging = false
+      const dragState = pureDragStateRef.current
+      dragState.isDragging = false
+
+      if (dragState.animationFrameId !== 0) {
+        window.cancelAnimationFrame(dragState.animationFrameId)
+        dragState.animationFrameId = 0
+      }
+
+      if (dragState.pendingDeltaX !== 0 || dragState.pendingDeltaY !== 0) {
+        void window.heartdock.moveWindowBy(dragState.pendingDeltaX, dragState.pendingDeltaY)
+        dragState.pendingDeltaX = 0
+        dragState.pendingDeltaY = 0
+      }
 
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
@@ -1407,6 +1473,7 @@ function App() {
     }
 
     setIsClosing(true)
+    void window.heartdock.setPureDisplayTopmost(false)
     void window.heartdock.setHitTestPassthrough(false)
     void window.heartdock.setClickThrough(false)
 
@@ -1432,6 +1499,82 @@ function App() {
     event.preventDefault()
     event.stopPropagation()
     showInteractionLockNotice()
+  }
+
+  const handleExportConfig = async (): Promise<void> => {
+    try {
+      const payload = {
+        app: 'HeartDock',
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        config
+      }
+      const result = await window.heartdock.exportConfigFile(JSON.stringify(payload, null, 2))
+
+      if (!result) {
+        return
+      }
+
+      window.alert(`已导出配置文件：${result.fileName}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出配置文件失败。'
+      window.alert(message)
+    }
+  }
+
+  const handleImportConfig = async (): Promise<void> => {
+    try {
+      const result = await window.heartdock.importConfigFile()
+
+      if (!result) {
+        return
+      }
+
+      const parsed = JSON.parse(result.content) as unknown
+      const importedConfig = normalizeConfig(getImportedConfigCandidate(parsed))
+      const nextConfig: HeartDockConfig = {
+        ...importedConfig,
+        clickThrough: false,
+        pureDisplay: false,
+        showSettings: true
+      }
+      const nextBpm = normalizeBpm(nextConfig.manualBpm)
+
+      void disconnectBleDevice('已载入配置文件，BLE 连接已关闭。')
+      void window.heartdock.setPureDisplayTopmost(false)
+      void window.heartdock.setHitTestPassthrough(false)
+      void window.heartdock.setClickThrough(false)
+
+      sourceModeRef.current = nextConfig.heartRateSourceMode
+      normalWindowBoundsRef.current = null
+
+      if (nextConfig.heartRateSourceMode === 'mock') {
+        sourceRef.current = new MockHeartRateSource()
+        setBpm(sourceRef.current.next())
+      } else {
+        setBpm(nextBpm)
+      }
+
+      if (nextConfig.heartRateSourceMode === 'ble') {
+        setBleStatus('idle')
+        setBleDeviceName('')
+        setHasBleReconnectDevice(false)
+        setBleMessage('已载入配置文件。请重新连接 BLE 心率设备后开始接收实时心率。')
+      }
+
+      setManualInput(String(nextBpm))
+      setRefreshIntervalInput(String(normalizeRefreshIntervalMs(nextConfig.refreshIntervalMs)))
+      setConfig(nextConfig)
+      window.alert(`已载入配置文件：${result.fileName}`)
+    } catch (error) {
+      const message =
+        error instanceof SyntaxError
+          ? '配置文件不是有效的 JSON 文件。'
+          : error instanceof Error
+            ? error.message
+            : '载入配置文件失败。'
+      window.alert(message)
+    }
   }
 
   const handleResetConfig = (): void => {
@@ -1925,6 +2068,35 @@ function App() {
               <p className="hint">
                 开启后，HeartDock 会拦截鼠标点击，不会操作 HeartDock，也不会点到底层窗口；需要再次操作时，请按 Ctrl + Shift + H 解锁。
               </p>
+
+              <div className="settings-section">
+                <div className="section-heading">
+                  <span>配置文件</span>
+                  <small>导出当前显示和数据源设置，或载入之前保存的 JSON 配置文件。</small>
+                </div>
+
+                <div className="config-file-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void handleExportConfig()}
+                  >
+                    导出配置
+                  </button>
+
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void handleImportConfig()}
+                  >
+                    载入配置
+                  </button>
+                </div>
+
+                <p className="hint">
+                  载入配置时会自动关闭纯享模式和鼠标禁止交互，避免载入后误锁窗口；BLE 设备需要重新连接。
+                </p>
+              </div>
 
               <div className="project-links-panel">
                 <div className="section-heading">
