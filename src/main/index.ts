@@ -33,6 +33,11 @@ interface ConfigFileSaveResult {
   filePath: string
 }
 
+interface HeartRateReportPngSaveResult {
+  fileName: string
+  filePath: string
+}
+
 let overlayWindow: BrowserWindow | null = null
 let overlayAlwaysOnTop = true
 let pureDisplayTopmost = false
@@ -67,6 +72,7 @@ const MAX_WINDOW_STATE: WindowState = {
 
 const BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
 const CONFIG_FILE_MAX_BYTES = 1024 * 1024
+const HEART_RATE_REPORT_PNG_MAX_BYTES = 8 * 1024 * 1024
 const PURE_DISPLAY_TOPMOST_REINFORCE_MS = 1200
 
 const ALLOWED_EXTERNAL_URLS = new Set([
@@ -211,13 +217,12 @@ function getConfigExportDefaultPath(): string {
     now.getFullYear(),
     String(now.getMonth() + 1).padStart(2, '0'),
     String(now.getDate()).padStart(2, '0'),
-    '-',
     String(now.getHours()).padStart(2, '0'),
     String(now.getMinutes()).padStart(2, '0'),
     String(now.getSeconds()).padStart(2, '0')
-  ].join('')
+  ].join('-')
 
-  return join(app.getPath('documents'), `HeartDock-config-${timestamp}.json`)
+  return join(app.getPath('documents'), `heartdock-config-${timestamp}.json`)
 }
 
 async function exportConfigFile(content: unknown): Promise<ConfigFileSaveResult | null> {
@@ -291,6 +296,69 @@ async function importConfigFile(): Promise<ConfigFileOpenResult | null> {
   return {
     content,
     fileName: basename(sourcePath)
+  }
+}
+
+function getSafePngFileName(value: unknown): string {
+  if (typeof value !== 'string') {
+    return 'heartdock-heart-rate-report.png'
+  }
+
+  const safeName = basename(value)
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120)
+
+  if (!safeName) {
+    return 'heartdock-heart-rate-report.png'
+  }
+
+  return safeName.toLowerCase().endsWith('.png') ? safeName : `${safeName}.png`
+}
+
+async function saveHeartRateReportPng(
+  contentBase64: unknown,
+  defaultFileName: unknown
+): Promise<HeartRateReportPngSaveResult | null> {
+  if (typeof contentBase64 !== 'string' || contentBase64.length === 0) {
+    throw new Error('报告图片内容为空，无法导出。')
+  }
+
+  const content = contentBase64.replace(/^data:image\/png;base64,/, '')
+  const imageBuffer = Buffer.from(content, 'base64')
+
+  if (imageBuffer.length === 0) {
+    throw new Error('报告图片内容无效，无法导出。')
+  }
+
+  if (imageBuffer.length > HEART_RATE_REPORT_PNG_MAX_BYTES) {
+    throw new Error('报告图片过大，无法导出。')
+  }
+
+  const dialogOptions = {
+    title: '导出 HeartDock 心率报告',
+    defaultPath: join(app.getPath('pictures'), getSafePngFileName(defaultFileName)),
+    filters: [
+      {
+        name: 'PNG 图片',
+        extensions: ['png']
+      }
+    ]
+  }
+
+  const result = overlayWindow
+    ? await dialog.showSaveDialog(overlayWindow, dialogOptions)
+    : await dialog.showSaveDialog(dialogOptions)
+
+  if (result.canceled || !result.filePath) {
+    return null
+  }
+
+  writeFileSync(result.filePath, imageBuffer)
+
+  return {
+    fileName: basename(result.filePath),
+    filePath: result.filePath
   }
 }
 
@@ -732,6 +800,13 @@ function registerIpcHandlers(): void {
   ipcMain.handle('overlay:import-config-file', () => {
     return importConfigFile()
   })
+
+  ipcMain.handle(
+    'overlay:save-heart-rate-report-png',
+    (_event, contentBase64: unknown, defaultFileName: unknown) => {
+      return saveHeartRateReportPng(contentBase64, defaultFileName)
+    }
+  )
 
   ipcMain.handle('overlay:move-window-by', (_event, deltaX: number, deltaY: number) => {
     if (!overlayWindow || overlayWindow.isDestroyed()) {

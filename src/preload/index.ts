@@ -23,6 +23,11 @@ interface ConfigFileSaveResult {
   filePath: string
 }
 
+interface HeartRateReportPngSaveResult {
+  fileName: string
+  filePath: string
+}
+
 contextBridge.exposeInMainWorld('heartdock', {
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.invoke('overlay:set-always-on-top', enabled),
   setPureDisplayTopmost: (enabled: boolean) =>
@@ -46,6 +51,11 @@ contextBridge.exposeInMainWorld('heartdock', {
     ipcRenderer.invoke('overlay:export-config-file', content),
   importConfigFile: (): Promise<ConfigFileOpenResult | null> =>
     ipcRenderer.invoke('overlay:import-config-file'),
+  saveHeartRateReportPng: (
+    contentBase64: string,
+    defaultFileName: string
+  ): Promise<HeartRateReportPngSaveResult | null> =>
+    ipcRenderer.invoke('overlay:save-heart-rate-report-png', contentBase64, defaultFileName),
   onClickThroughChanged: (callback: (enabled: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => callback(enabled)
     ipcRenderer.on('overlay:click-through-changed', listener)

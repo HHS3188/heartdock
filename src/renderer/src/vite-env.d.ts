@@ -23,6 +23,11 @@ interface ConfigFileSaveResult {
   filePath: string
 }
 
+interface HeartRateReportPngSaveResult {
+  fileName: string
+  filePath: string
+}
+
 interface HeartDockApi {
   setAlwaysOnTop: (enabled: boolean) => Promise<boolean>
   setPureDisplayTopmost: (enabled: boolean) => Promise<boolean>
@@ -39,6 +44,10 @@ interface HeartDockApi {
   selectDisplayBackgroundImage: () => Promise<DisplayBackgroundImageResult | null>
   exportConfigFile: (content: string) => Promise<ConfigFileSaveResult | null>
   importConfigFile: () => Promise<ConfigFileOpenResult | null>
+  saveHeartRateReportPng: (
+    contentBase64: string,
+    defaultFileName: string
+  ) => Promise<HeartRateReportPngSaveResult | null>
   onClickThroughChanged: (callback: (enabled: boolean) => void) => () => void
 }
 
