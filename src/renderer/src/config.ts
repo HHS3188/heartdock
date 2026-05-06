@@ -17,7 +17,18 @@ export type DisplayStylePreset =
   | 'aurora'
   | 'mono'
   | 'heartbeat'
+  | 'pixel'
+  | 'cyber-scan'
+  | 'cloud'
   | 'image-card'
+
+export type ScenePresetId =
+  | 'stream-overlay'
+  | 'game-minimal'
+  | 'desktop-companion'
+  | 'anime-sticker'
+  | 'ecg-monitor'
+  | 'office-subtle'
 
 export interface HeartDockConfig {
   heartRateSourceMode: HeartRateSourceMode
@@ -43,6 +54,13 @@ export interface HeartDockConfig {
   displayBackgroundImageOpacity: number
   displayBackgroundImageFit: DisplayBackgroundImageFit
   displayStylePreset: DisplayStylePreset
+  lastAppliedScenePreset: ScenePresetId | ''
+  heartbeatPulseEnabled: boolean
+  smoothColorTransitionEnabled: boolean
+  highHeartRateAlertEnabled: boolean
+  highHeartRateAlertThreshold: number
+  lowHeartRateBreathEnabled: boolean
+  heartRateRecordingEnabled: boolean
 }
 
 export const defaultConfig: HeartDockConfig = {
@@ -72,7 +90,14 @@ export const defaultConfig: HeartDockConfig = {
   displayBackgroundImageName: '',
   displayBackgroundImageOpacity: 0.85,
   displayBackgroundImageFit: 'contain',
-  displayStylePreset: 'none'
+  displayStylePreset: 'none',
+  lastAppliedScenePreset: '',
+  heartbeatPulseEnabled: true,
+  smoothColorTransitionEnabled: true,
+  highHeartRateAlertEnabled: false,
+  highHeartRateAlertThreshold: 150,
+  lowHeartRateBreathEnabled: false,
+  heartRateRecordingEnabled: false
 }
 
 const CONFIG_KEY = 'heartdock.config.v1'
@@ -166,9 +191,23 @@ export function normalizeDisplayStylePreset(value: unknown): DisplayStylePreset 
     value === 'aurora' ||
     value === 'mono' ||
     value === 'heartbeat' ||
+    value === 'pixel' ||
+    value === 'cyber-scan' ||
+    value === 'cloud' ||
     value === 'image-card'
     ? value
     : defaultConfig.displayStylePreset
+}
+
+export function normalizeScenePresetId(value: unknown): ScenePresetId | '' {
+  return value === 'stream-overlay' ||
+    value === 'game-minimal' ||
+    value === 'desktop-companion' ||
+    value === 'anime-sticker' ||
+    value === 'ecg-monitor' ||
+    value === 'office-subtle'
+    ? value
+    : ''
 }
 
 export function normalizeColorRules(value: unknown): ColorRule[] {
@@ -242,7 +281,14 @@ export function createDefaultConfig(): HeartDockConfig {
     displayBackgroundImageName: defaultConfig.displayBackgroundImageName,
     displayBackgroundImageOpacity: defaultConfig.displayBackgroundImageOpacity,
     displayBackgroundImageFit: defaultConfig.displayBackgroundImageFit,
-    displayStylePreset: defaultConfig.displayStylePreset
+    displayStylePreset: defaultConfig.displayStylePreset,
+    lastAppliedScenePreset: defaultConfig.lastAppliedScenePreset,
+    heartbeatPulseEnabled: defaultConfig.heartbeatPulseEnabled,
+    smoothColorTransitionEnabled: defaultConfig.smoothColorTransitionEnabled,
+    highHeartRateAlertEnabled: defaultConfig.highHeartRateAlertEnabled,
+    highHeartRateAlertThreshold: defaultConfig.highHeartRateAlertThreshold,
+    lowHeartRateBreathEnabled: defaultConfig.lowHeartRateBreathEnabled,
+    heartRateRecordingEnabled: defaultConfig.heartRateRecordingEnabled
   }
 }
 
@@ -296,6 +342,25 @@ export function normalizeConfig(value: unknown): HeartDockConfig {
       parsed.displayBackgroundImageOpacity
     ),
     displayBackgroundImageFit: normalizeDisplayBackgroundImageFit(parsed.displayBackgroundImageFit),
-    displayStylePreset: normalizeDisplayStylePreset(parsed.displayStylePreset)
+    displayStylePreset: normalizeDisplayStylePreset(parsed.displayStylePreset),
+    lastAppliedScenePreset: normalizeScenePresetId(parsed.lastAppliedScenePreset),
+    heartbeatPulseEnabled: Boolean(
+      parsed.heartbeatPulseEnabled ?? defaultConfig.heartbeatPulseEnabled
+    ),
+    smoothColorTransitionEnabled: Boolean(
+      parsed.smoothColorTransitionEnabled ?? defaultConfig.smoothColorTransitionEnabled
+    ),
+    highHeartRateAlertEnabled: Boolean(
+      parsed.highHeartRateAlertEnabled ?? defaultConfig.highHeartRateAlertEnabled
+    ),
+    highHeartRateAlertThreshold: normalizeBpm(
+      parsed.highHeartRateAlertThreshold ?? defaultConfig.highHeartRateAlertThreshold
+    ),
+    lowHeartRateBreathEnabled: Boolean(
+      parsed.lowHeartRateBreathEnabled ?? defaultConfig.lowHeartRateBreathEnabled
+    ),
+    heartRateRecordingEnabled: Boolean(
+      parsed.heartRateRecordingEnabled ?? defaultConfig.heartRateRecordingEnabled
+    )
   }
 }
