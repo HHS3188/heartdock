@@ -13,8 +13,19 @@ interface DisplayBackgroundImageResult {
   url: string
 }
 
+interface ConfigFileOpenResult {
+  content: string
+  fileName: string
+}
+
+interface ConfigFileSaveResult {
+  fileName: string
+  filePath: string
+}
+
 interface HeartDockApi {
   setAlwaysOnTop: (enabled: boolean) => Promise<boolean>
+  setPureDisplayTopmost: (enabled: boolean) => Promise<boolean>
   setClickThrough: (enabled: boolean) => Promise<boolean>
   setHitTestPassthrough: (enabled: boolean) => Promise<boolean>
   getClickThrough: () => Promise<boolean>
@@ -26,6 +37,8 @@ interface HeartDockApi {
   setWindowBounds: (bounds: HeartDockWindowBounds) => Promise<boolean>
   moveWindowBy: (deltaX: number, deltaY: number) => Promise<boolean>
   selectDisplayBackgroundImage: () => Promise<DisplayBackgroundImageResult | null>
+  exportConfigFile: (content: string) => Promise<ConfigFileSaveResult | null>
+  importConfigFile: () => Promise<ConfigFileOpenResult | null>
   onClickThroughChanged: (callback: (enabled: boolean) => void) => () => void
 }
 

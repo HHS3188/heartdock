@@ -13,8 +13,20 @@ interface DisplayBackgroundImageResult {
   url: string
 }
 
+interface ConfigFileOpenResult {
+  content: string
+  fileName: string
+}
+
+interface ConfigFileSaveResult {
+  fileName: string
+  filePath: string
+}
+
 contextBridge.exposeInMainWorld('heartdock', {
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.invoke('overlay:set-always-on-top', enabled),
+  setPureDisplayTopmost: (enabled: boolean) =>
+    ipcRenderer.invoke('overlay:set-pure-display-topmost', enabled),
   setClickThrough: (enabled: boolean) => ipcRenderer.invoke('overlay:set-click-through', enabled),
   setHitTestPassthrough: (enabled: boolean) =>
     ipcRenderer.invoke('overlay:set-hit-test-passthrough', enabled),
@@ -30,6 +42,10 @@ contextBridge.exposeInMainWorld('heartdock', {
     ipcRenderer.invoke('overlay:move-window-by', deltaX, deltaY),
   selectDisplayBackgroundImage: (): Promise<DisplayBackgroundImageResult | null> =>
     ipcRenderer.invoke('overlay:select-display-background-image'),
+  exportConfigFile: (content: string): Promise<ConfigFileSaveResult | null> =>
+    ipcRenderer.invoke('overlay:export-config-file', content),
+  importConfigFile: (): Promise<ConfigFileOpenResult | null> =>
+    ipcRenderer.invoke('overlay:import-config-file'),
   onClickThroughChanged: (callback: (enabled: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => callback(enabled)
     ipcRenderer.on('overlay:click-through-changed', listener)

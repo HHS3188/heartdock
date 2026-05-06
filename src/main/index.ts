@@ -23,11 +23,24 @@ interface DisplayBackgroundImageResult {
   url: string
 }
 
+interface ConfigFileOpenResult {
+  content: string
+  fileName: string
+}
+
+interface ConfigFileSaveResult {
+  fileName: string
+  filePath: string
+}
+
 let overlayWindow: BrowserWindow | null = null
+let overlayAlwaysOnTop = true
+let pureDisplayTopmost = false
 let clickThrough = false
 let hitTestPassthrough = false
 let clickThroughHotkeyLocked = false
 let clickThroughHotkeyUnlockTimer: ReturnType<typeof setTimeout> | null = null
+let pureDisplayTopmostTimer: ReturnType<typeof setInterval> | null = null
 let isStartupView = true
 let saveWindowStateTimer: ReturnType<typeof setTimeout> | null = null
 let bluetoothSelectionTimer: ReturnType<typeof setTimeout> | null = null
@@ -53,6 +66,8 @@ const MAX_WINDOW_STATE: WindowState = {
 }
 
 const BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+const CONFIG_FILE_MAX_BYTES = 1024 * 1024
+const PURE_DISPLAY_TOPMOST_REINFORCE_MS = 1200
 
 const ALLOWED_EXTERNAL_URLS = new Set([
   'https://github.com/HHS3188/heartdock',
@@ -187,6 +202,95 @@ async function selectDisplayBackgroundImage(): Promise<DisplayBackgroundImageRes
     assetFileName,
     fileName: basename(sourcePath),
     url: getDisplayBackgroundImageUrl(assetFileName)
+  }
+}
+
+function getConfigExportDefaultPath(): string {
+  const now = new Date()
+  const timestamp = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+    '-',
+    String(now.getHours()).padStart(2, '0'),
+    String(now.getMinutes()).padStart(2, '0'),
+    String(now.getSeconds()).padStart(2, '0')
+  ].join('')
+
+  return join(app.getPath('documents'), `HeartDock-config-${timestamp}.json`)
+}
+
+async function exportConfigFile(content: unknown): Promise<ConfigFileSaveResult | null> {
+  if (typeof content !== 'string' || content.length === 0) {
+    throw new Error('配置内容为空，无法导出。')
+  }
+
+  if (Buffer.byteLength(content, 'utf8') > CONFIG_FILE_MAX_BYTES) {
+    throw new Error('配置内容过大，无法导出。')
+  }
+
+  const dialogOptions = {
+    title: '导出 HeartDock 配置文件',
+    defaultPath: getConfigExportDefaultPath(),
+    filters: [
+      {
+        name: 'JSON 配置文件',
+        extensions: ['json']
+      }
+    ]
+  }
+
+  const result = overlayWindow
+    ? await dialog.showSaveDialog(overlayWindow, dialogOptions)
+    : await dialog.showSaveDialog(dialogOptions)
+
+  if (result.canceled || !result.filePath) {
+    return null
+  }
+
+  writeFileSync(result.filePath, content, 'utf8')
+
+  return {
+    fileName: basename(result.filePath),
+    filePath: result.filePath
+  }
+}
+
+async function importConfigFile(): Promise<ConfigFileOpenResult | null> {
+  const dialogOptions: OpenDialogOptions = {
+    title: '载入 HeartDock 配置文件',
+    properties: ['openFile'],
+    filters: [
+      {
+        name: 'JSON 配置文件',
+        extensions: ['json']
+      }
+    ]
+  }
+
+  const result = overlayWindow
+    ? await dialog.showOpenDialog(overlayWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions)
+
+  if (result.canceled || !result.filePaths[0]) {
+    return null
+  }
+
+  const sourcePath = result.filePaths[0]
+
+  if (extname(sourcePath).toLowerCase() !== '.json') {
+    throw new Error('不支持的配置文件格式。请选择 .json 文件。')
+  }
+
+  const content = readFileSync(sourcePath, 'utf8')
+
+  if (Buffer.byteLength(content, 'utf8') > CONFIG_FILE_MAX_BYTES) {
+    throw new Error('配置文件过大，无法载入。')
+  }
+
+  return {
+    content,
+    fileName: basename(sourcePath)
   }
 }
 
@@ -419,11 +523,6 @@ function enterMainViewAndRestoreWindowState(): boolean {
   return true
 }
 
-function setOverlayAlwaysOnTop(value: boolean): boolean {
-  overlayWindow?.setAlwaysOnTop(value)
-  return value
-}
-
 function applyMouseIgnoreState(): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     return
@@ -438,6 +537,80 @@ function applyMouseIgnoreState(): void {
   } catch (error) {
     console.error('[HeartDock] failed to update click-through:', error)
   }
+}
+
+function stopPureDisplayTopmostTimer(): void {
+  if (!pureDisplayTopmostTimer) {
+    return
+  }
+
+  clearInterval(pureDisplayTopmostTimer)
+  pureDisplayTopmostTimer = null
+}
+
+function reinforcePureDisplayTopmost(): void {
+  if (!overlayAlwaysOnTop || !pureDisplayTopmost || !overlayWindow || overlayWindow.isDestroyed()) {
+    return
+  }
+
+  try {
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+    overlayWindow.moveTop()
+  } catch (error) {
+    console.error('[HeartDock] failed to reinforce pure display topmost:', error)
+  }
+}
+
+function updatePureDisplayTopmostTimer(): void {
+  if (!overlayAlwaysOnTop || !pureDisplayTopmost) {
+    stopPureDisplayTopmostTimer()
+    return
+  }
+
+  if (pureDisplayTopmostTimer) {
+    return
+  }
+
+  pureDisplayTopmostTimer = setInterval(reinforcePureDisplayTopmost, PURE_DISPLAY_TOPMOST_REINFORCE_MS)
+}
+
+function applyOverlayAlwaysOnTop(): void {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    return
+  }
+
+  try {
+    if (!overlayAlwaysOnTop) {
+      overlayWindow.setAlwaysOnTop(false)
+      return
+    }
+
+    if (pureDisplayTopmost) {
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+      overlayWindow.moveTop()
+      return
+    }
+
+    overlayWindow.setAlwaysOnTop(true)
+  } catch (error) {
+    console.error('[HeartDock] failed to update always-on-top:', error)
+  }
+}
+
+function setOverlayAlwaysOnTop(value: boolean): boolean {
+  overlayAlwaysOnTop = value
+  applyOverlayAlwaysOnTop()
+  updatePureDisplayTopmostTimer()
+
+  return value
+}
+
+function setPureDisplayTopmost(value: boolean): boolean {
+  pureDisplayTopmost = value
+  applyOverlayAlwaysOnTop()
+  updatePureDisplayTopmostTimer()
+
+  return value
 }
 
 function setOverlayClickThrough(value: boolean): boolean {
@@ -511,6 +684,10 @@ function registerIpcHandlers(): void {
     return setOverlayAlwaysOnTop(value)
   })
 
+  ipcMain.handle('overlay:set-pure-display-topmost', (_event, value: boolean) => {
+    return setPureDisplayTopmost(value)
+  })
+
   ipcMain.handle('overlay:set-click-through', (_event, value: boolean) => {
     return setOverlayClickThrough(value)
   })
@@ -546,6 +723,14 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('overlay:select-display-background-image', () => {
     return selectDisplayBackgroundImage()
+  })
+
+  ipcMain.handle('overlay:export-config-file', (_event, content: unknown) => {
+    return exportConfigFile(content)
+  })
+
+  ipcMain.handle('overlay:import-config-file', () => {
+    return importConfigFile()
   })
 
   ipcMain.handle('overlay:move-window-by', (_event, deltaX: number, deltaY: number) => {
@@ -623,6 +808,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('set-always-on-top', (_event, value: boolean) => {
     return setOverlayAlwaysOnTop(value)
+  })
+
+  ipcMain.handle('set-pure-display-topmost', (_event, value: boolean) => {
+    return setPureDisplayTopmost(value)
   })
 
   ipcMain.handle('set-click-through', (_event, value: boolean) => {
@@ -745,6 +934,7 @@ function createOverlayWindow(): void {
   })
 
   overlayWindow.on('close', () => {
+    setPureDisplayTopmost(false)
     flushWindowState()
   })
 
@@ -811,5 +1001,6 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   unlockClickThroughHotkey()
+  stopPureDisplayTopmostTimer()
   globalShortcut.unregisterAll()
 })

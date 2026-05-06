@@ -8,7 +8,16 @@ export type HeartRateSourceMode = 'mock' | 'manual' | 'ble'
 export type HeartRateColorMode = 'range' | 'fixed'
 export type DisplayGlowLevel = 'off' | 'soft' | 'medium' | 'strong'
 export type DisplayBackgroundImageFit = 'contain' | 'cover' | 'stretch'
-export type DisplayStylePreset = 'none' | 'glass' | 'capsule' | 'neon' | 'kawaii' | 'image-card'
+export type DisplayStylePreset =
+  | 'none'
+  | 'glass'
+  | 'capsule'
+  | 'neon'
+  | 'kawaii'
+  | 'aurora'
+  | 'mono'
+  | 'heartbeat'
+  | 'image-card'
 
 export interface HeartDockConfig {
   heartRateSourceMode: HeartRateSourceMode
@@ -76,6 +85,28 @@ export function normalizeBpm(value: number): number {
   return Math.min(Math.max(Math.round(value), 30), 240)
 }
 
+export function normalizeHeartRateSourceMode(value: unknown): HeartRateSourceMode {
+  return value === 'mock' || value === 'manual' || value === 'ble'
+    ? value
+    : defaultConfig.heartRateSourceMode
+}
+
+export function normalizeFontSize(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return defaultConfig.fontSize
+  }
+
+  return Math.min(Math.max(Math.round(value), 36), 96)
+}
+
+export function normalizeBackgroundOpacity(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return defaultConfig.backgroundOpacity
+  }
+
+  return Math.min(Math.max(value, 0), 1)
+}
+
 export function normalizeRefreshIntervalMs(value: number): number {
   if (!Number.isFinite(value)) {
     return defaultConfig.refreshIntervalMs
@@ -132,6 +163,9 @@ export function normalizeDisplayStylePreset(value: unknown): DisplayStylePreset 
     value === 'capsule' ||
     value === 'neon' ||
     value === 'kawaii' ||
+    value === 'aurora' ||
+    value === 'mono' ||
+    value === 'heartbeat' ||
     value === 'image-card'
     ? value
     : defaultConfig.displayStylePreset
@@ -173,48 +207,7 @@ export function loadConfig(): HeartDockConfig {
   }
 
   try {
-    const parsed = JSON.parse(raw) as Partial<HeartDockConfig>
-
-    return {
-      ...createDefaultConfig(),
-      ...parsed,
-      manualBpm: normalizeBpm(parsed.manualBpm ?? defaultConfig.manualBpm),
-      refreshIntervalMs: normalizeRefreshIntervalMs(
-        parsed.refreshIntervalMs ?? defaultConfig.refreshIntervalMs
-      ),
-      clickThrough: Boolean(parsed.clickThrough ?? defaultConfig.clickThrough),
-      showSettings: Boolean(parsed.showSettings ?? defaultConfig.showSettings),
-      pureDisplay: Boolean(parsed.pureDisplay ?? defaultConfig.pureDisplay),
-      prefixText: normalizeDisplayText(parsed.prefixText, defaultConfig.prefixText, 8),
-      unitText: normalizeDisplayText(parsed.unitText, defaultConfig.unitText, 8),
-      colorMode: normalizeColorMode(parsed.colorMode),
-      fixedColor: normalizeColor(parsed.fixedColor, defaultConfig.fixedColor),
-      glowLevel: normalizeGlowLevel(parsed.glowLevel),
-      colorRules: normalizeColorRules(parsed.colorRules),
-      displayBackgroundImageEnabled: Boolean(
-        parsed.displayBackgroundImageEnabled ?? defaultConfig.displayBackgroundImageEnabled
-      ),
-      displayBackgroundImageUrl: normalizeDisplayText(
-        parsed.displayBackgroundImageUrl,
-        defaultConfig.displayBackgroundImageUrl,
-        2048
-      ),
-      displayBackgroundImageAssetFileName: normalizeDisplayText(
-        parsed.displayBackgroundImageAssetFileName,
-        defaultConfig.displayBackgroundImageAssetFileName,
-        256
-      ),
-      displayBackgroundImageName: normalizeDisplayText(
-        parsed.displayBackgroundImageName,
-        defaultConfig.displayBackgroundImageName,
-        128
-      ),
-      displayBackgroundImageOpacity: normalizeDisplayBackgroundImageOpacity(
-        parsed.displayBackgroundImageOpacity
-      ),
-      displayBackgroundImageFit: normalizeDisplayBackgroundImageFit(parsed.displayBackgroundImageFit),
-      displayStylePreset: normalizeDisplayStylePreset(parsed.displayStylePreset)
-    }
+    return normalizeConfig(JSON.parse(raw))
   } catch {
     return createDefaultConfig()
   }
@@ -229,6 +222,11 @@ export function createDefaultConfig(): HeartDockConfig {
     ...defaultConfig,
     refreshIntervalMs: normalizeRefreshIntervalMs(defaultConfig.refreshIntervalMs),
     manualBpm: normalizeBpm(defaultConfig.manualBpm),
+    heartRateSourceMode: normalizeHeartRateSourceMode(defaultConfig.heartRateSourceMode),
+    mockPaused: Boolean(defaultConfig.mockPaused),
+    fontSize: normalizeFontSize(defaultConfig.fontSize),
+    backgroundOpacity: normalizeBackgroundOpacity(defaultConfig.backgroundOpacity),
+    alwaysOnTop: Boolean(defaultConfig.alwaysOnTop),
     clickThrough: defaultConfig.clickThrough,
     showSettings: defaultConfig.showSettings,
     pureDisplay: defaultConfig.pureDisplay,
@@ -245,5 +243,59 @@ export function createDefaultConfig(): HeartDockConfig {
     displayBackgroundImageOpacity: defaultConfig.displayBackgroundImageOpacity,
     displayBackgroundImageFit: defaultConfig.displayBackgroundImageFit,
     displayStylePreset: defaultConfig.displayStylePreset
+  }
+}
+
+export function normalizeConfig(value: unknown): HeartDockConfig {
+  if (!value || typeof value !== 'object') {
+    return createDefaultConfig()
+  }
+
+  const parsed = value as Partial<HeartDockConfig>
+
+  return {
+    ...createDefaultConfig(),
+    ...parsed,
+    heartRateSourceMode: normalizeHeartRateSourceMode(parsed.heartRateSourceMode),
+    mockPaused: Boolean(parsed.mockPaused ?? defaultConfig.mockPaused),
+    manualBpm: normalizeBpm(parsed.manualBpm ?? defaultConfig.manualBpm),
+    refreshIntervalMs: normalizeRefreshIntervalMs(
+      parsed.refreshIntervalMs ?? defaultConfig.refreshIntervalMs
+    ),
+    fontSize: normalizeFontSize(parsed.fontSize),
+    backgroundOpacity: normalizeBackgroundOpacity(parsed.backgroundOpacity),
+    alwaysOnTop: Boolean(parsed.alwaysOnTop ?? defaultConfig.alwaysOnTop),
+    clickThrough: Boolean(parsed.clickThrough ?? defaultConfig.clickThrough),
+    showSettings: Boolean(parsed.showSettings ?? defaultConfig.showSettings),
+    pureDisplay: Boolean(parsed.pureDisplay ?? defaultConfig.pureDisplay),
+    prefixText: normalizeDisplayText(parsed.prefixText, defaultConfig.prefixText, 8),
+    unitText: normalizeDisplayText(parsed.unitText, defaultConfig.unitText, 8),
+    colorMode: normalizeColorMode(parsed.colorMode),
+    fixedColor: normalizeColor(parsed.fixedColor, defaultConfig.fixedColor),
+    glowLevel: normalizeGlowLevel(parsed.glowLevel),
+    colorRules: normalizeColorRules(parsed.colorRules),
+    displayBackgroundImageEnabled: Boolean(
+      parsed.displayBackgroundImageEnabled ?? defaultConfig.displayBackgroundImageEnabled
+    ),
+    displayBackgroundImageUrl: normalizeDisplayText(
+      parsed.displayBackgroundImageUrl,
+      defaultConfig.displayBackgroundImageUrl,
+      2048
+    ),
+    displayBackgroundImageAssetFileName: normalizeDisplayText(
+      parsed.displayBackgroundImageAssetFileName,
+      defaultConfig.displayBackgroundImageAssetFileName,
+      256
+    ),
+    displayBackgroundImageName: normalizeDisplayText(
+      parsed.displayBackgroundImageName,
+      defaultConfig.displayBackgroundImageName,
+      128
+    ),
+    displayBackgroundImageOpacity: normalizeDisplayBackgroundImageOpacity(
+      parsed.displayBackgroundImageOpacity
+    ),
+    displayBackgroundImageFit: normalizeDisplayBackgroundImageFit(parsed.displayBackgroundImageFit),
+    displayStylePreset: normalizeDisplayStylePreset(parsed.displayStylePreset)
   }
 }
