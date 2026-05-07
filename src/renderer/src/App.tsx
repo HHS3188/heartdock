@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent as ReactFocusEvent,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react'
@@ -31,6 +32,7 @@ import { MockHeartRateSource } from './core/MockHeartRateSource'
 type BleConnectionStatus = 'idle' | 'connecting' | 'connected' | 'failed'
 type FirstRunNoticeMode = 'required' | 'splash'
 type AppearanceMode = 'dark' | 'light'
+type OnboardingStepId = 'source' | 'display' | 'pure' | 'dynamic' | 'recording' | 'tools'
 
 interface HeartRateRecordSample {
   timestamp: number
@@ -57,6 +59,35 @@ interface HeartRateZoneSummary {
   percent: number
 }
 
+interface HeartRateReportWindowPayload {
+  report: HeartRateRecordSummary | null
+  notice: string
+  config: HeartDockConfig
+  versionLabel: string
+  generatedAt: number
+}
+
+interface OnboardingStep {
+  id: OnboardingStepId
+  title: string
+  body: string
+  targetId: string
+}
+
+interface OnboardingRect {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+interface FloatingHelpTooltip {
+  text: string
+  top: number
+  left: number
+  placement: 'above' | 'below'
+}
+
 interface ScenePreset {
   id: ScenePresetId
   label: string
@@ -69,9 +100,67 @@ interface ScenePreset {
 const SOURCE_CODE_URL = 'https://github.com/HHS3188/heartdock'
 const FEEDBACK_URL = 'https://github.com/HHS3188/heartdock/issues/new'
 const FIRST_RUN_NOTICE_KEY = 'heartdock.firstRunNotice.v1'
+const ONBOARDING_TOUR_KEY = 'heartdock.onboardingTour.v1'
 const APPEARANCE_MODE_KEY = 'heartdock.appearanceMode.v1'
 const FIRST_RUN_NOTICE_SECONDS = 15
-const HEART_RATE_REPORT_VERSION_LABEL = 'v0.7.0'
+const STARTUP_UPDATE_GATE_SECONDS = 3
+const HEART_RATE_REPORT_VERSION_LABEL = 'v0.9.0'
+const ONBOARDING_WINDOW_SIZE = {
+  width: 1080,
+  height: 760
+}
+
+const defaultUpdateSummary: UpdateSummary = {
+  status: 'idle',
+  currentVersion: '0.9.0',
+  latestVersion: '',
+  releaseName: '',
+  releaseNotes: [],
+  releaseDate: '',
+  releasePageUrl: 'https://github.com/HHS3188/heartdock/releases/latest',
+  isMajorUpdate: false,
+  progressPercent: 0,
+  message: ''
+}
+
+const onboardingSteps: OnboardingStep[] = [
+  {
+    id: 'source',
+    title: '选择心率来源',
+    body: '这里决定 HeartDock 使用模拟、手动还是 BLE 心率设备。第一次使用建议先用模拟心率确认显示效果。',
+    targetId: 'tour-source'
+  },
+  {
+    id: 'display',
+    title: '调整心率显示',
+    body: '这里控制字号、文字、颜色、发光和显示框样式，会同时影响普通模式和纯享模式。',
+    targetId: 'tour-display'
+  },
+  {
+    id: 'pure',
+    title: '进入纯享模式',
+    body: '纯享模式会隐藏设置，只保留心率本体。可以拖动位置，双击心率区域退出。',
+    targetId: 'tour-pure'
+  },
+  {
+    id: 'dynamic',
+    title: '设置动态效果',
+    body: '这里控制心跳缩放、颜色过渡和高低心率提醒。想降低性能开销时可以关闭部分动效。',
+    targetId: 'tour-dynamic'
+  },
+  {
+    id: 'recording',
+    title: '记录纯享心率',
+    body: '开启后进入纯享模式会记录本次有效心率，退出纯享时在独立报告窗口中查看和导出 PNG。',
+    targetId: 'tour-recording'
+  },
+  {
+    id: 'tools',
+    title: '维护和反馈工具',
+    body: '这里可以检查更新、导出诊断信息、导出配置，并在反馈问题时附带诊断文件。',
+    targetId: 'tour-tools'
+  }
+]
 
 
 const colorPresetOptions = [
@@ -448,11 +537,483 @@ function getHeartRateZoneSummary(
   })
 }
 
+function getChartMarkerSamples(report: HeartRateRecordSummary, maxMarkers = 12): HeartRateRecordSample[] {
+  if (report.samples.length <= maxMarkers) {
+    return report.samples
+  }
+
+  const requiredSamples = [
+    report.samples[0],
+    report.samples[report.samples.length - 1],
+    report.samples.find((sample) => sample.timestamp === report.maxBpmAt && sample.bpm === report.maxBpm),
+    report.samples.find((sample) => sample.timestamp === report.minBpmAt && sample.bpm === report.minBpm)
+  ].filter((sample): sample is HeartRateRecordSample => Boolean(sample))
+
+  const markerMap = new Map<string, HeartRateRecordSample>()
+  const addMarker = (sample: HeartRateRecordSample): void => {
+    markerMap.set(`${sample.timestamp}-${sample.bpm}`, sample)
+  }
+
+  requiredSamples.forEach(addMarker)
+
+  const remainingSlots = Math.max(0, maxMarkers - markerMap.size)
+
+  if (remainingSlots > 0) {
+    const step = Math.max(1, Math.floor((report.samples.length - 1) / (remainingSlots + 1)))
+
+    for (let index = step; index < report.samples.length - 1 && markerMap.size < maxMarkers; index += step) {
+      addMarker(report.samples[index])
+    }
+  }
+
+  return Array.from(markerMap.values()).sort((first, second) => first.timestamp - second.timestamp)
+}
+
+function getHeartRateReportInsights(report: HeartRateRecordSummary) {
+  const firstSample = report.samples[0]
+  const lastSample = report.samples[report.samples.length - 1] ?? firstSample
+  const deltaBpm = lastSample.bpm - firstSample.bpm
+  const rangeBpm = report.maxBpm - report.minBpm
+  const sampleInterval =
+    report.sampleCount > 1 ? Math.round(report.durationMs / Math.max(1, report.sampleCount - 1) / 100) / 10 : 0
+  const trendLabel = Math.abs(deltaBpm) <= 2 ? '基本平稳' : deltaBpm > 0 ? '整体上升' : '整体下降'
+  const stabilityLabel = rangeBpm <= 5 ? '波动很小' : rangeBpm <= 15 ? '轻微波动' : '波动明显'
+
+  return {
+    trendLabel,
+    trendDetail: `${firstSample.bpm} → ${lastSample.bpm} bpm，变化 ${deltaBpm > 0 ? '+' : ''}${deltaBpm} bpm`,
+    stabilityLabel,
+    stabilityDetail: `最高与最低相差 ${rangeBpm} bpm`,
+    densityLabel: `${report.sampleCount} 个样本`,
+    densityDetail: sampleInterval > 0 ? `平均约 ${sampleInterval} 秒一个样本` : '本次记录时间较短',
+    peakDetail: `最高 ${getTimeOffsetLabel(report.startedAt, report.maxBpmAt)}，最低 ${getTimeOffsetLabel(
+      report.startedAt,
+      report.minBpmAt
+    )}`
+  }
+}
+
+function createHeartRateReportPngBase64(
+  report: HeartRateRecordSummary,
+  config: HeartDockConfig,
+  versionLabel = HEART_RATE_REPORT_VERSION_LABEL
+): string {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1200
+  canvas.height = 860
+
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    throw new Error('当前环境无法创建报告图片。')
+  }
+
+  const width = canvas.width
+  const height = canvas.height
+  const chartX = 86
+  const chartY = 344
+  const chartWidth = 1028
+  const chartHeight = 240
+  const zoneSummary = getHeartRateZoneSummary(report, config)
+  const insights = getHeartRateReportInsights(report)
+  const markerSamples = getChartMarkerSamples(report, 12)
+  const firstSampleAt = report.samples[0]?.timestamp ?? report.startedAt
+  const lastSampleAt = report.samples[report.samples.length - 1]?.timestamp ?? report.endedAt
+  const timeRange = Math.max(lastSampleAt - firstSampleAt, 1000)
+  const minChartBpm = Math.max(30, report.minBpm - 12)
+  const maxChartBpm = Math.min(240, report.maxBpm + 12)
+  const bpmRange = Math.max(maxChartBpm - minChartBpm, 20)
+  const getPoint = (sample: HeartRateRecordSample): { x: number; y: number } => ({
+    x: chartX + ((sample.timestamp - firstSampleAt) / timeRange) * chartWidth,
+    y: chartY + chartHeight - ((sample.bpm - minChartBpm) / bpmRange) * chartHeight
+  })
+
+  context.fillStyle = '#07111f'
+  context.fillRect(0, 0, width, height)
+
+  const backgroundGradient = context.createLinearGradient(0, 0, width, height)
+  backgroundGradient.addColorStop(0, '#0f1f38')
+  backgroundGradient.addColorStop(0.52, '#111827')
+  backgroundGradient.addColorStop(1, '#18213a')
+  context.fillStyle = backgroundGradient
+  context.fillRect(0, 0, width, height)
+
+  context.fillStyle = 'rgba(56, 189, 248, 0.12)'
+  context.beginPath()
+  context.arc(180, 96, 180, 0, Math.PI * 2)
+  context.fill()
+  context.fillStyle = 'rgba(251, 113, 133, 0.1)'
+  context.beginPath()
+  context.arc(1040, 116, 220, 0, Math.PI * 2)
+  context.fill()
+
+  context.fillStyle = '#f8fafc'
+  context.font = '800 44px Segoe UI, Microsoft YaHei, sans-serif'
+  context.fillText('♥ HeartDock 心率记录', 72, 86)
+  context.font = '600 18px Segoe UI, Microsoft YaHei, sans-serif'
+  context.fillStyle = 'rgba(226, 232, 240, 0.76)'
+  context.fillText(`${versionLabel} · ${formatDateTime(report.endedAt)} 导出`, 76, 122)
+
+  const cards = [
+    ['记录时长', formatDuration(report.durationMs)],
+    ['平均心率', `${report.averageBpm} bpm`],
+    ['最高心率', `${report.maxBpm} bpm`],
+    ['最低心率', `${report.minBpm} bpm`],
+    ['有效样本', `${report.sampleCount} 个`]
+  ]
+
+  cards.forEach(([label, value], index) => {
+    const cardX = 72 + index * 214
+    context.fillStyle = 'rgba(15, 23, 42, 0.62)'
+    context.strokeStyle = 'rgba(125, 211, 252, 0.22)'
+    context.lineWidth = 1
+    context.beginPath()
+    context.roundRect(cardX, 168, 184, 104, 22)
+    context.fill()
+    context.stroke()
+    context.fillStyle = 'rgba(203, 213, 225, 0.76)'
+    context.font = '600 18px Segoe UI, Microsoft YaHei, sans-serif'
+    context.fillText(label, cardX + 20, 205)
+    context.fillStyle = '#f8fafc'
+    context.font = '800 30px Segoe UI, Microsoft YaHei, sans-serif'
+    context.fillText(value, cardX + 20, 246)
+  })
+
+  context.fillStyle = 'rgba(2, 6, 23, 0.48)'
+  context.strokeStyle = 'rgba(125, 211, 252, 0.22)'
+  context.lineWidth = 1
+  context.beginPath()
+  context.roundRect(72, 312, 1056, 320, 26)
+  context.fill()
+  context.stroke()
+
+  for (let gridIndex = 0; gridIndex <= 4; gridIndex++) {
+    const y = chartY + (chartHeight / 4) * gridIndex
+    const labelBpm = Math.round(maxChartBpm - (bpmRange / 4) * gridIndex)
+
+    context.strokeStyle = 'rgba(148, 163, 184, 0.16)'
+    context.beginPath()
+    context.moveTo(chartX, y)
+    context.lineTo(chartX + chartWidth, y)
+    context.stroke()
+    context.fillStyle = 'rgba(203, 213, 225, 0.62)'
+    context.font = '600 14px Segoe UI, Microsoft YaHei, sans-serif'
+    context.fillText(`${labelBpm}`, 36, y + 5)
+  }
+
+  report.samples.forEach((sample, index) => {
+    if (index === 0) {
+      return
+    }
+
+    const previousPoint = getPoint(report.samples[index - 1])
+    const point = getPoint(sample)
+    context.strokeStyle = getColorForBpm(sample.bpm, config)
+    context.lineWidth = 4
+    context.lineCap = 'round'
+    context.beginPath()
+    context.moveTo(previousPoint.x, previousPoint.y)
+    context.lineTo(point.x, point.y)
+    context.stroke()
+  })
+
+  for (const sample of markerSamples) {
+    const point = getPoint(sample)
+    const isExtreme =
+      (sample.timestamp === report.maxBpmAt && sample.bpm === report.maxBpm) ||
+      (sample.timestamp === report.minBpmAt && sample.bpm === report.minBpm)
+    context.fillStyle =
+      sample.timestamp === report.maxBpmAt && sample.bpm === report.maxBpm
+        ? '#fb7185'
+        : sample.timestamp === report.minBpmAt && sample.bpm === report.minBpm
+          ? '#4ade80'
+          : 'rgba(248, 250, 252, 0.72)'
+    context.beginPath()
+    context.arc(point.x, point.y, isExtreme ? 7 : 4, 0, Math.PI * 2)
+    context.fill()
+    context.strokeStyle = 'rgba(248, 250, 252, 0.84)'
+    context.lineWidth = isExtreme ? 3 : 2
+    context.stroke()
+  }
+
+  context.fillStyle = 'rgba(226, 232, 240, 0.78)'
+  context.font = '600 17px Segoe UI, Microsoft YaHei, sans-serif'
+  context.fillText(`记录时间：${formatDateTime(report.startedAt)} - ${formatDateTime(report.endedAt)}`, 86, 662)
+  context.fillText(`${insights.trendLabel} · ${insights.trendDetail}`, 86, 692)
+  context.fillText(`${insights.stabilityLabel} · ${insights.peakDetail}`, 600, 692)
+
+  context.fillStyle = 'rgba(203, 213, 225, 0.72)'
+  context.font = '700 17px Segoe UI, Microsoft YaHei, sans-serif'
+  context.fillText('区间分布', 86, 730)
+
+  zoneSummary.forEach((zone, index) => {
+    const barX = 86 + index * 330
+    const barY = 752
+    context.fillStyle = 'rgba(15, 23, 42, 0.72)'
+    context.beginPath()
+    context.roundRect(barX, barY, 280, 18, 9)
+    context.fill()
+    context.fillStyle = zone.color
+    context.beginPath()
+    context.roundRect(barX, barY, Math.max(8, (zone.percent / 100) * 280), 18, 9)
+    context.fill()
+    context.fillStyle = 'rgba(226, 232, 240, 0.78)'
+    context.font = '600 15px Segoe UI, Microsoft YaHei, sans-serif'
+    context.fillText(`${zone.label} bpm · ${zone.percent}%`, barX, barY + 42)
+  })
+
+  context.fillStyle = 'rgba(148, 163, 184, 0.72)'
+  context.font = '600 15px Segoe UI, Microsoft YaHei, sans-serif'
+  context.fillText('仅保留本次纯享记录，不写入历史。', 76, 842)
+  context.fillText('github.com/HHS3188/heartdock', 890, 842)
+
+  return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
+}
+
 function getTimeOffsetLabel(baseTimestamp: number, timestamp: number): string {
   return `+${formatDuration(timestamp - baseTimestamp)}`
 }
 
+function isHeartRateReportPayload(value: unknown): value is HeartRateReportWindowPayload {
+  return Boolean(value && typeof value === 'object' && 'config' in value && 'generatedAt' in value)
+}
+
+function HeartRateReportWindow() {
+  const [payload, setPayload] = useState<HeartRateReportWindowPayload | null>(null)
+  const [notice, setNotice] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+
+    void window.heartdock.getHeartRateReportPayload().then((value) => {
+      if (isMounted && isHeartRateReportPayload(value)) {
+        setPayload(value)
+        setNotice(value.notice)
+      }
+    })
+
+    const unsubscribe = window.heartdock.onHeartRateReportPayloadChanged((value) => {
+      if (isHeartRateReportPayload(value)) {
+        setPayload(value)
+        setNotice(value.notice)
+      }
+    })
+
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
+  }, [])
+
+  const report = payload?.report ?? null
+  const config = payload?.config ?? createDefaultConfig()
+  const zones = useMemo(() => (report ? getHeartRateZoneSummary(report, config) : []), [config, report])
+  const chart = useMemo(() => {
+    if (!report) {
+      return null
+    }
+
+    const firstSampleAt = report.samples[0]?.timestamp ?? report.startedAt
+    const lastSampleAt = report.samples[report.samples.length - 1]?.timestamp ?? report.endedAt
+    const timeRange = Math.max(lastSampleAt - firstSampleAt, 1000)
+    const minChartBpm = Math.max(30, report.minBpm - 12)
+    const maxChartBpm = Math.min(240, report.maxBpm + 12)
+    const bpmRange = Math.max(maxChartBpm - minChartBpm, 20)
+    const getPoint = (sample: HeartRateRecordSample): { x: number; y: number } => ({
+      x: ((sample.timestamp - firstSampleAt) / timeRange) * 1000,
+      y: 220 - ((sample.bpm - minChartBpm) / bpmRange) * 220
+    })
+    const points = report.samples.map(getPoint)
+    const pathPoints = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')
+    const maxPoint = getPoint({ timestamp: report.maxBpmAt, bpm: report.maxBpm })
+    const minPoint = getPoint({ timestamp: report.minBpmAt, bpm: report.minBpm })
+    const markerPoints = getChartMarkerSamples(report, 12).map((sample) => ({
+      ...getPoint(sample),
+      key: `${sample.timestamp}-${sample.bpm}`,
+      isMax: sample.timestamp === report.maxBpmAt && sample.bpm === report.maxBpm,
+      isMin: sample.timestamp === report.minBpmAt && sample.bpm === report.minBpm
+    }))
+
+    return { pathPoints, maxPoint, minPoint, markerPoints }
+  }, [report])
+  const insights = useMemo(() => (report ? getHeartRateReportInsights(report) : null), [report])
+
+  const handleExportPng = async (): Promise<void> => {
+    if (!report || !payload) {
+      return
+    }
+
+    setIsExporting(true)
+
+    try {
+      const contentBase64 = createHeartRateReportPngBase64(report, config, payload.versionLabel)
+      const defaultFileName = `heartdock-heart-rate-${getTimestampFilePart(report.endedAt)}.png`
+      const result = await window.heartdock.saveHeartRateReportPng(contentBase64, defaultFileName)
+
+      setNotice(result ? `已导出 PNG 报告：${result.fileName}` : '已取消导出 PNG，当前报告仍保留。')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '导出 PNG 报告失败。')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  return (
+    <main className="report-window-shell">
+      <section className="heart-rate-report-panel report-window-panel">
+        <div className="report-heading">
+          <span>纯享心率记录</span>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="关闭心率报告"
+            title="关闭心率报告"
+            onClick={() => void window.heartdock.closeHeartRateReportWindow()}
+          >
+            ×
+          </button>
+        </div>
+
+        {report ? (
+          <>
+            <div className="report-summary-grid">
+              <div>
+                <span>记录时长</span>
+                <strong>{formatDuration(report.durationMs)}</strong>
+              </div>
+              <div>
+                <span>平均心率</span>
+                <strong>{report.averageBpm} bpm</strong>
+              </div>
+              <div>
+                <span>最高 / 最低</span>
+                <strong>
+                  {report.maxBpm} / {report.minBpm}
+                </strong>
+              </div>
+              <div>
+                <span>有效样本</span>
+                <strong>{report.sampleCount} 个</strong>
+              </div>
+              <div>
+                <span>心率波动</span>
+                <strong>{report.maxBpm - report.minBpm} bpm</strong>
+              </div>
+              <div>
+                <span>报告版本</span>
+                <strong>{payload?.versionLabel ?? HEART_RATE_REPORT_VERSION_LABEL}</strong>
+              </div>
+            </div>
+
+            <div className="report-chart" aria-label="本次纯享心率时间线">
+              {chart && (
+                <svg viewBox="0 0 1000 220" role="img">
+                  <polyline className="report-chart-grid-line" points="0,55 1000,55" />
+                  <polyline className="report-chart-grid-line" points="0,110 1000,110" />
+                  <polyline className="report-chart-grid-line" points="0,165 1000,165" />
+                  <polyline className="report-chart-line" points={chart.pathPoints} />
+                  {chart.markerPoints.map((point) => (
+                    <circle
+                      className={`report-chart-marker ${point.isMax ? 'is-max' : ''} ${
+                        point.isMin ? 'is-min' : ''
+                      }`}
+                      key={point.key}
+                      cx={point.x}
+                      cy={point.y}
+                      r={point.isMax || point.isMin ? 7 : 4}
+                    />
+                  ))}
+                </svg>
+              )}
+            </div>
+
+            {insights && (
+              <div className="report-insight-grid">
+                <div className="report-insight-card is-trend">
+                  <span>趋势</span>
+                  <strong>{insights.trendLabel}</strong>
+                  <small>{insights.trendDetail}</small>
+                </div>
+                <div className="report-insight-card is-stability">
+                  <span>稳定度</span>
+                  <strong>{insights.stabilityLabel}</strong>
+                  <small>{insights.stabilityDetail}</small>
+                </div>
+                <div className="report-insight-card is-density">
+                  <span>采样</span>
+                  <strong>{insights.densityLabel}</strong>
+                  <small>{insights.densityDetail}</small>
+                </div>
+              </div>
+            )}
+
+            <div className="report-detail-grid">
+              <p className="report-meta">
+                <span>记录时间</span>
+                <strong>
+                  {formatDateTime(report.startedAt)} - {formatDateTime(report.endedAt)}
+                </strong>
+              </p>
+              <p className="report-meta">
+                <span>峰值位置</span>
+                <strong>{insights?.peakDetail}</strong>
+              </p>
+            </div>
+
+            <div className="report-zone-panel">
+              <span>区间分布</span>
+              {zones.map((zone) => (
+                <div className="report-zone-row" key={zone.label}>
+                  <small>{zone.label} bpm</small>
+                  <div className="report-zone-track">
+                    <span
+                      style={{
+                        width: `${Math.max(zone.percent, zone.count > 0 ? 4 : 0)}%`,
+                        backgroundColor: zone.color
+                      }}
+                    />
+                  </div>
+                  <strong>{zone.percent}%</strong>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="report-empty-message">{notice || '暂无可显示的心率记录。'}</p>
+        )}
+
+        {notice && report && <p className="report-status-message">{notice}</p>}
+
+        <div className="report-actions">
+          {report && (
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={isExporting}
+              onClick={() => void handleExportPng()}
+            >
+              {isExporting ? '正在导出...' : '导出 PNG'}
+            </button>
+          )}
+          <button
+            className="reset-button"
+            type="button"
+            onClick={() => void window.heartdock.closeHeartRateReportWindow()}
+          >
+            关闭报告
+          </button>
+        </div>
+      </section>
+    </main>
+  )
+}
+
 function App() {
+  if (new URLSearchParams(window.location.search).get('view') === 'heart-rate-report') {
+    return <HeartRateReportWindow />
+  }
+
   const initialConfigRef = useRef<HeartDockConfig | null>(null)
 
   if (initialConfigRef.current === null) {
@@ -472,6 +1033,8 @@ function App() {
   const bleCharacteristicRef = useRef<BleCharacteristic | null>(null)
   const isManualBleDisconnectRef = useRef(false)
   const pureHeartRef = useRef<HTMLDivElement | null>(null)
+  const overlayCardRef = useRef<HTMLElement | null>(null)
+  const firstRunNoticeCardRef = useRef<HTMLElement | null>(null)
   const normalWindowBoundsRef = useRef<HeartDockWindowBounds | null>(null)
   const pureDragStateRef = useRef({
     isDragging: false,
@@ -494,6 +1057,7 @@ function App() {
   const lastScenePresetUndoRef = useRef<HeartDockConfig | null>(null)
 
   const pureDragMovedRef = useRef(false)
+  const onboardingPreviousWindowBoundsRef = useRef<HeartDockWindowBounds | null>(null)
   const interactionLockNoticeTimerRef = useRef<number | null>(null)
   const windowResizeStateRef = useRef({
     isResizing: false,
@@ -524,6 +1088,17 @@ function App() {
     localStorage.getItem(FIRST_RUN_NOTICE_KEY) === 'accepted' ? 0 : FIRST_RUN_NOTICE_SECONDS
   )
   const [firstRunNoticeAccepted, setFirstRunNoticeAccepted] = useState(false)
+  const [isBootSplashVisible, setIsBootSplashVisible] = useState(true)
+  const [startupGateSecondsLeft, setStartupGateSecondsLeft] = useState(STARTUP_UPDATE_GATE_SECONDS)
+  const [isStartupGateReady, setIsStartupGateReady] = useState(false)
+  const [updateSummary, setUpdateSummary] = useState<UpdateSummary>(defaultUpdateSummary)
+  const [isUpdateDialogDismissed, setIsUpdateDialogDismissed] = useState(false)
+  const [isManualUpdateCheck, setIsManualUpdateCheck] = useState(false)
+  const [isManualUpdateDialogOpen, setIsManualUpdateDialogOpen] = useState(false)
+  const [settingsNotice, setSettingsNotice] = useState('')
+  const [isOnboardingActive, setIsOnboardingActive] = useState(false)
+  const [onboardingStepIndex, setOnboardingStepIndex] = useState(0)
+  const [onboardingRect, setOnboardingRect] = useState<OnboardingRect | null>(null)
   const [manualInput, setManualInput] = useState(() =>
     String(normalizeBpm(initialConfigRef.current?.manualBpm ?? 78))
   )
@@ -542,12 +1117,15 @@ function App() {
   )
   const [scenePresetToConfirm, setScenePresetToConfirm] = useState<ScenePreset | null>(null)
   const [isScenePresetModalClosing, setIsScenePresetModalClosing] = useState(false)
+  const [isResetConfigConfirmOpen, setIsResetConfigConfirmOpen] = useState(false)
+  const [isResetConfigConfirmClosing, setIsResetConfigConfirmClosing] = useState(false)
   const [bpmPulseKey, setBpmPulseKey] = useState(0)
   const [heartRateRecordReport, setHeartRateRecordReport] =
     useState<HeartRateRecordSummary | null>(null)
   const [heartRateRecordNotice, setHeartRateRecordNotice] = useState('')
   const [isExportingHeartRateReport, setIsExportingHeartRateReport] = useState(false)
   const [isHeartRateReportClosing, setIsHeartRateReportClosing] = useState(false)
+  const [floatingHelpTooltip, setFloatingHelpTooltip] = useState<FloatingHelpTooltip | null>(null)
 
   const [openColorRuleIndexes, setOpenColorRuleIndexes] = useState<number[]>([])
 
@@ -587,6 +1165,9 @@ function App() {
   ]
     .filter(Boolean)
     .join(' ')
+  const shouldProducePureDisplayReport =
+    config.heartRateRecordingEnabled ||
+    (config.heartRateSourceMode === 'ble' && bleStatus === 'connected')
   const displayFrameStateClass = isHighHeartRateAlertActive ? 'is-high-heart-rate-alert' : ''
   const firstRunNoticeTotalSeconds =
     firstRunNoticeMode === 'required' ? FIRST_RUN_NOTICE_SECONDS : 0
@@ -594,6 +1175,23 @@ function App() {
     firstRunNoticeTotalSeconds <= 0
       ? 100
       : ((firstRunNoticeTotalSeconds - firstRunNoticeSecondsLeft) / firstRunNoticeTotalSeconds) * 100
+  const isUpdateBlocking =
+    updateSummary.status === 'checking' ||
+    updateSummary.status === 'downloading' ||
+    (updateSummary.isMajorUpdate &&
+      (updateSummary.status === 'available' || updateSummary.status === 'downloaded'))
+  const canEnterFromStartup = isStartupGateReady && !isUpdateBlocking
+  const hasActionableUpdate =
+    updateSummary.status === 'available' ||
+    updateSummary.status === 'downloading' ||
+    updateSummary.status === 'downloaded'
+  const shouldShowUpdateDialog =
+    (!isUpdateDialogDismissed && hasActionableUpdate) || isManualUpdateDialogOpen
+  const isUpdateCheckStatusDialog = isManualUpdateDialogOpen && !hasActionableUpdate
+  const updateDialogLatestVersion =
+    updateSummary.latestVersion ||
+    (updateSummary.status === 'not-available' ? updateSummary.currentVersion : '-')
+  const currentOnboardingStep = onboardingSteps[onboardingStepIndex] ?? onboardingSteps[0]
   const heartRateReportChart = useMemo(() => {
     const report = heartRateRecordReport
 
@@ -615,12 +1213,22 @@ function App() {
     const pathPoints = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')
     const maxPoint = getPoint({ timestamp: report.maxBpmAt, bpm: report.maxBpm })
     const minPoint = getPoint({ timestamp: report.minBpmAt, bpm: report.minBpm })
+    const markerPoints = getChartMarkerSamples(report, 12).map((sample) => ({
+      ...getPoint(sample),
+      key: `${sample.timestamp}-${sample.bpm}`,
+      isMax: sample.timestamp === report.maxBpmAt && sample.bpm === report.maxBpm,
+      isMin: sample.timestamp === report.minBpmAt && sample.bpm === report.minBpm
+    }))
 
-    return { pathPoints, maxPoint, minPoint }
+    return { pathPoints, maxPoint, minPoint, markerPoints }
   }, [heartRateRecordReport])
   const heartRateReportZones = useMemo(
     () => (heartRateRecordReport ? getHeartRateZoneSummary(heartRateRecordReport, config) : []),
     [config, heartRateRecordReport]
+  )
+  const heartRateReportInsights = useMemo(
+    () => (heartRateRecordReport ? getHeartRateReportInsights(heartRateRecordReport) : null),
+    [heartRateRecordReport]
   )
 
   const recordCurrentBpmSample = useCallback((): void => {
@@ -665,14 +1273,25 @@ function App() {
       return
     }
 
+    const openReportWindow = (report: HeartRateRecordSummary | null, notice: string): void => {
+      void window.heartdock.openHeartRateReportWindow({
+        report,
+        notice,
+        config: configRef.current,
+        versionLabel: HEART_RATE_REPORT_VERSION_LABEL,
+        generatedAt: Date.now()
+      })
+    }
+
     if (!summary) {
       setHeartRateRecordReport(null)
-      setHeartRateRecordNotice('本次纯享期间没有记录到有效心率。BLE 未连接或心率显示为 -- 时不会写入样本。')
+      setHeartRateRecordNotice('')
       return
     }
 
     setHeartRateRecordNotice('')
-    setHeartRateRecordReport(summary)
+    setHeartRateRecordReport(null)
+    openReportWindow(summary, '')
   }, [recordCurrentBpmSample])
 
   const startHeartRateRecording = useCallback((): void => {
@@ -695,6 +1314,49 @@ function App() {
     }, 1000)
   }, [recordCurrentBpmSample])
 
+  const beginOnboardingTour = useCallback((): void => {
+    setConfig((current) => ({
+      ...current,
+      pureDisplay: false,
+      showSettings: true
+    }))
+
+    void window.heartdock.setPureDisplayTopmost(false)
+    void window.heartdock.setHitTestPassthrough(false)
+
+    void window.heartdock.getWindowBounds().then((bounds) => {
+      if (!bounds) {
+        return
+      }
+
+      if (!onboardingPreviousWindowBoundsRef.current) {
+        onboardingPreviousWindowBoundsRef.current = bounds
+      }
+
+      const width = ONBOARDING_WINDOW_SIZE.width
+      const height = ONBOARDING_WINDOW_SIZE.height
+
+      void window.heartdock.setWindowBounds({
+        width,
+        height,
+        x: Math.round(bounds.x + bounds.width / 2 - width / 2),
+        y: Math.round(bounds.y + bounds.height / 2 - height / 2)
+      })
+    })
+
+    setOnboardingStepIndex(0)
+    setIsOnboardingActive(true)
+  }, [])
+
+  const restoreOnboardingWindowBounds = useCallback((): void => {
+    const previousBounds = onboardingPreviousWindowBoundsRef.current
+    onboardingPreviousWindowBoundsRef.current = null
+
+    if (previousBounds) {
+      void window.heartdock.setWindowBounds(previousBounds)
+    }
+  }, [])
+
   useEffect(() => {
     sourceModeRef.current = config.heartRateSourceMode
   }, [config.heartRateSourceMode])
@@ -705,15 +1367,16 @@ function App() {
   }, [bpm, recordCurrentBpmSample])
 
   useEffect(() => {
-    if (config.pureDisplay && config.heartRateRecordingEnabled) {
+    if (config.pureDisplay && shouldProducePureDisplayReport) {
       startHeartRateRecording()
       return
     }
 
     if (heartRateRecordSessionRef.current) {
-      stopHeartRateRecording(config.heartRateRecordingEnabled)
+      stopHeartRateRecording(shouldProducePureDisplayReport)
     }
   }, [
+    shouldProducePureDisplayReport,
     config.heartRateRecordingEnabled,
     config.pureDisplay,
     startHeartRateRecording,
@@ -768,6 +1431,162 @@ function App() {
   }, [firstRunNoticeMode, shouldShowFirstRunNotice])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setIsBootSplashVisible(false)
+    }, 2800)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = window.heartdock.onUpdateStatusChanged((summary) => {
+      setUpdateSummary(summary)
+      setIsManualUpdateCheck(false)
+    })
+
+    void window.heartdock.getUpdateStatus().then(setUpdateSummary)
+
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (!shouldShowFirstRunNotice) {
+      return
+    }
+
+    setIsStartupGateReady(false)
+    setStartupGateSecondsLeft(STARTUP_UPDATE_GATE_SECONDS)
+    setIsUpdateDialogDismissed(false)
+
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000)
+      const nextSecondsLeft = Math.max(0, STARTUP_UPDATE_GATE_SECONDS - elapsedSeconds)
+      setStartupGateSecondsLeft(nextSecondsLeft)
+
+      if (nextSecondsLeft === 0) {
+        setIsStartupGateReady(true)
+      }
+    }, 200)
+
+    void window.heartdock.checkForUpdates().catch((error) => {
+      setUpdateSummary({
+        ...defaultUpdateSummary,
+        status: 'error',
+        message: error instanceof Error ? error.message : '检查更新失败。'
+      })
+    })
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [shouldShowFirstRunNotice])
+
+  useEffect(() => {
+    if (shouldShowFirstRunNotice || isPureDisplay || localStorage.getItem(ONBOARDING_TOUR_KEY) === 'completed') {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      beginOnboardingTour()
+    }, 420)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [beginOnboardingTour, isPureDisplay, shouldShowFirstRunNotice])
+
+  useEffect(() => {
+    if (!isOnboardingActive) {
+      setOnboardingRect(null)
+      return
+    }
+
+    let scrollTimer: number | null = null
+    let settleTimer: number | null = null
+    let finalSettleTimer: number | null = null
+
+    const updateRect = (): void => {
+      const element = document.querySelector<HTMLElement>(
+        `[data-tour-id="${currentOnboardingStep.targetId}"]`
+      )
+
+      if (!element) {
+        setOnboardingRect(null)
+        return
+      }
+
+      const rect = element.getBoundingClientRect()
+      setOnboardingRect({
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height
+      })
+    }
+
+    const scrollTargetIntoView = (): void => {
+      const element = document.querySelector<HTMLElement>(
+        `[data-tour-id="${currentOnboardingStep.targetId}"]`
+      )
+
+      if (!element) {
+        setOnboardingRect(null)
+        return
+      }
+
+      const settingsPanel = element.closest<HTMLElement>('.settings-panel')
+
+      if (settingsPanel) {
+        const panelRect = settingsPanel.getBoundingClientRect()
+        const elementRect = element.getBoundingClientRect()
+        const desiredTop =
+          settingsPanel.scrollTop +
+          elementRect.top -
+          panelRect.top -
+          Math.max(24, (settingsPanel.clientHeight - elementRect.height) / 2)
+
+        settingsPanel.scrollTo({
+          top: Math.max(0, desiredTop),
+          behavior: 'smooth'
+        })
+      } else {
+        element.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'nearest'
+        })
+      }
+
+      window.scrollTo(0, 0)
+      updateRect()
+
+      settleTimer = window.setTimeout(updateRect, 220)
+      finalSettleTimer = window.setTimeout(updateRect, 560)
+    }
+
+    scrollTimer = window.setTimeout(scrollTargetIntoView, 90)
+    window.addEventListener('resize', updateRect)
+    window.addEventListener('scroll', updateRect, true)
+
+    return () => {
+      if (scrollTimer !== null) {
+        window.clearTimeout(scrollTimer)
+      }
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer)
+      }
+      if (finalSettleTimer !== null) {
+        window.clearTimeout(finalSettleTimer)
+      }
+      window.removeEventListener('resize', updateRect)
+      window.removeEventListener('scroll', updateRect, true)
+    }
+  }, [currentOnboardingStep.targetId, isOnboardingActive])
+
+  useEffect(() => {
     saveConfig(config)
   }, [config])
 
@@ -796,51 +1615,75 @@ function App() {
   }, [config.clickThrough])
 
   useEffect(() => {
-    if (!config.pureDisplay || config.clickThrough) {
+    const needsTransparentAreaPassthrough =
+      isBootSplashVisible || shouldShowFirstRunNotice || config.clickThrough || config.pureDisplay
+
+    if (!needsTransparentAreaPassthrough) {
+      void window.heartdock.setHitTestPassthrough(false)
       return
     }
 
-    let lastSentClickThrough: boolean | null = null
+    let lastSentPassthrough: boolean | null = null
 
-    const applyClickThrough = (enabled: boolean): void => {
-      if (enabled === lastSentClickThrough) {
+    const applyPassthrough = (enabled: boolean): void => {
+      if (enabled === lastSentPassthrough) {
         return
       }
-      lastSentClickThrough = enabled
+      lastSentPassthrough = enabled
       void window.heartdock.setHitTestPassthrough(enabled)
     }
 
-    const updatePureHeartHitTest = (event: MouseEvent): void => {
-      const rect = pureHeartRef.current?.getBoundingClientRect()
+    const getActiveHitRect = (): DOMRect | null => {
+      if (isBootSplashVisible) {
+        return null
+      }
+
+      if (shouldShowFirstRunNotice) {
+        return firstRunNoticeCardRef.current?.getBoundingClientRect() ?? null
+      }
+
+      if (config.pureDisplay) {
+        return pureHeartRef.current?.getBoundingClientRect() ?? null
+      }
+
+      if (config.clickThrough) {
+        return overlayCardRef.current?.getBoundingClientRect() ?? null
+      }
+
+      return null
+    }
+
+    const updateHitTest = (event: MouseEvent): void => {
+      const rect = getActiveHitRect()
 
       if (!rect) {
-        applyClickThrough(true)
+        applyPassthrough(true)
         return
       }
 
-      const isInsideHeart =
+      const isInsideVisibleArea =
         event.clientX >= rect.left &&
         event.clientX <= rect.right &&
         event.clientY >= rect.top &&
         event.clientY <= rect.bottom
 
-      applyClickThrough(!isInsideHeart)
+      applyPassthrough(!isInsideVisibleArea)
     }
 
     const handleWindowMouseLeave = (): void => {
-      applyClickThrough(true)
+      applyPassthrough(true)
     }
 
-    applyClickThrough(true)
-    window.addEventListener('mousemove', updatePureHeartHitTest)
+    applyPassthrough(true)
+    window.addEventListener('mousemove', updateHitTest)
     window.addEventListener('mouseleave', handleWindowMouseLeave)
 
     return () => {
-      window.removeEventListener('mousemove', updatePureHeartHitTest)
+      window.removeEventListener('mousemove', updateHitTest)
       window.removeEventListener('mouseleave', handleWindowMouseLeave)
       void window.heartdock.setHitTestPassthrough(false)
     }
-  }, [config.clickThrough, config.pureDisplay])
+  }, [config.clickThrough, config.pureDisplay, isBootSplashVisible, shouldShowFirstRunNotice])
 
   useEffect(() => {
     const unsubscribe = window.heartdock.onClickThroughChanged((enabled) => {
@@ -1911,6 +2754,10 @@ function App() {
   }
 
   const handleConfirmFirstRunNotice = (): void => {
+    if (!canEnterFromStartup) {
+      return
+    }
+
     if (firstRunNoticeMode === 'required') {
       if (firstRunNoticeSecondsLeft > 0 || !firstRunNoticeAccepted) {
         return
@@ -1941,6 +2788,152 @@ function App() {
     setIsFirstRunNoticeLeaving(false)
     setShouldShowFirstRunNotice(true)
   }
+
+  const completeOnboarding = (): void => {
+    localStorage.setItem(ONBOARDING_TOUR_KEY, 'completed')
+    setIsOnboardingActive(false)
+    restoreOnboardingWindowBounds()
+  }
+
+  const handleShowOnboardingAgain = (): void => {
+    localStorage.removeItem(ONBOARDING_TOUR_KEY)
+    beginOnboardingTour()
+  }
+
+  const handleOnboardingNext = (): void => {
+    if (onboardingStepIndex >= onboardingSteps.length - 1) {
+      completeOnboarding()
+      return
+    }
+
+    setOnboardingStepIndex((current) => Math.min(current + 1, onboardingSteps.length - 1))
+  }
+
+  const handleOnboardingPrevious = (): void => {
+    setOnboardingStepIndex((current) => Math.max(current - 1, 0))
+  }
+
+  const handleManualCheckForUpdates = async (): Promise<void> => {
+    setIsManualUpdateCheck(true)
+    setIsManualUpdateDialogOpen(true)
+    setIsUpdateDialogDismissed(false)
+    setSettingsNotice('正在检查更新...')
+    setUpdateSummary((current) => ({
+      ...current,
+      status: 'checking',
+      message: '正在检查 HeartDock 更新...'
+    }))
+
+    try {
+      const summary = await window.heartdock.checkForUpdates()
+      setUpdateSummary(summary)
+      setSettingsNotice(summary.message || (summary.status === 'available' ? '发现新版本。' : '检查更新完成。'))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '检查更新失败。'
+      setSettingsNotice(message)
+      setUpdateSummary({ ...defaultUpdateSummary, status: 'error', message })
+    } finally {
+      setIsManualUpdateCheck(false)
+    }
+  }
+
+  const handleDownloadUpdate = async (): Promise<void> => {
+    setIsUpdateDialogDismissed(false)
+    const summary = await window.heartdock.downloadUpdate()
+    setUpdateSummary(summary)
+  }
+
+  const handleInstallUpdate = (): void => {
+    void window.heartdock.installUpdate()
+  }
+
+  const handleDismissUpdateDialog = (): void => {
+    if (updateSummary.isMajorUpdate && hasActionableUpdate) {
+      return
+    }
+
+    setIsManualUpdateDialogOpen(false)
+    setIsUpdateDialogDismissed(true)
+  }
+
+  const buildDiagnosticsSnapshot = (): Record<string, unknown> => ({
+    heartRateSource: config.heartRateSourceMode,
+    bleMode: config.heartRateSourceMode === 'ble',
+    bleStatus,
+    pureDisplay: config.pureDisplay,
+    enhancedTopmost: config.pureDisplay && config.alwaysOnTop,
+    clickThrough: config.clickThrough,
+    displayStylePreset: config.displayStylePreset,
+    dynamicEffects: {
+      heartbeatPulseEnabled: config.heartbeatPulseEnabled,
+      smoothColorTransitionEnabled: config.smoothColorTransitionEnabled,
+      highHeartRateAlertEnabled: config.highHeartRateAlertEnabled,
+      highHeartRateAlertThreshold: config.highHeartRateAlertThreshold,
+      lowHeartRateBreathEnabled: config.lowHeartRateBreathEnabled
+    },
+    configSummary: {
+      showSettings: config.showSettings,
+      alwaysOnTop: config.alwaysOnTop,
+      fontSize: config.fontSize,
+      backgroundOpacity: config.backgroundOpacity,
+      colorMode: config.colorMode,
+      glowLevel: config.glowLevel,
+      colorRuleCount: config.colorRules.length,
+      hasCustomBackgroundImage: Boolean(config.displayBackgroundImageEnabled),
+      displayBackgroundImageFit: config.displayBackgroundImageFit,
+      heartRateRecordingEnabled: config.heartRateRecordingEnabled,
+      refreshIntervalMs: config.refreshIntervalMs
+    },
+    runtimeState: {
+      bpm: shouldShowBlePlaceholder ? '--' : bpm,
+      updateStatus: updateSummary.status,
+      reportWindowMode: 'independent'
+    }
+  })
+
+  const handleExportDiagnostics = async (): Promise<void> => {
+    try {
+      const result = await window.heartdock.exportDiagnostics(buildDiagnosticsSnapshot())
+
+      setSettingsNotice(
+        result
+          ? `已导出诊断信息：${result.fileName}。反馈问题时可以把这个文件一起附上。`
+          : '已取消导出诊断信息。'
+      )
+    } catch (error) {
+      setSettingsNotice(error instanceof Error ? error.message : '导出诊断信息失败。')
+    }
+  }
+
+  const showFloatingHelpTooltip = (
+    event: ReactMouseEvent<HTMLElement> | ReactFocusEvent<HTMLElement>,
+    text: string
+  ): void => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const placement: FloatingHelpTooltip['placement'] = rect.top < 96 ? 'below' : 'above'
+    const left = Math.min(window.innerWidth - 136, Math.max(136, rect.left + rect.width / 2))
+    const top = placement === 'below' ? rect.bottom + 10 : rect.top - 10
+
+    setFloatingHelpTooltip({ text, top, left, placement })
+  }
+
+  const hideFloatingHelpTooltip = (): void => {
+    setFloatingHelpTooltip(null)
+  }
+
+  const renderHelpButton = (text: string) => (
+    <button
+      className="help-tooltip"
+      type="button"
+      aria-label={text}
+      onMouseEnter={(event) => showFloatingHelpTooltip(event, text)}
+      onMouseLeave={hideFloatingHelpTooltip}
+      onFocus={(event) => showFloatingHelpTooltip(event, text)}
+      onBlur={hideFloatingHelpTooltip}
+    >
+      ?
+    </button>
+  )
 
   const handleCloseWindow = (): void => {
     if (isClosing) {
@@ -2083,10 +3076,6 @@ function App() {
   }
 
   const handleResetConfig = (): void => {
-    const confirmed = window.confirm('确定要重置所有显示设置吗？')
-
-    if (!confirmed) return
-
     const nextConfig = createDefaultConfig()
     const nextBpm = normalizeBpm(nextConfig.manualBpm)
 
@@ -2102,163 +3091,22 @@ function App() {
     setConfig(nextConfig)
   }
 
-  const createHeartRateReportPngBase64 = (report: HeartRateRecordSummary): string => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 1200
-    canvas.height = 860
+  const handleOpenResetConfigConfirm = (): void => {
+    setIsResetConfigConfirmClosing(false)
+    setIsResetConfigConfirmOpen(true)
+  }
 
-    const context = canvas.getContext('2d')
+  const handleCloseResetConfigConfirm = (): void => {
+    setIsResetConfigConfirmClosing(true)
+    window.setTimeout(() => {
+      setIsResetConfigConfirmOpen(false)
+      setIsResetConfigConfirmClosing(false)
+    }, 180)
+  }
 
-    if (!context) {
-      throw new Error('当前环境无法创建报告图片。')
-    }
-
-    const width = canvas.width
-    const height = canvas.height
-    const chartX = 86
-    const chartY = 344
-    const chartWidth = 1028
-    const chartHeight = 240
-    const zoneSummary = getHeartRateZoneSummary(report, configRef.current)
-    const firstSampleAt = report.samples[0]?.timestamp ?? report.startedAt
-    const lastSampleAt = report.samples[report.samples.length - 1]?.timestamp ?? report.endedAt
-    const timeRange = Math.max(lastSampleAt - firstSampleAt, 1000)
-    const minChartBpm = Math.max(30, report.minBpm - 12)
-    const maxChartBpm = Math.min(240, report.maxBpm + 12)
-    const bpmRange = Math.max(maxChartBpm - minChartBpm, 20)
-    const getPoint = (sample: HeartRateRecordSample): { x: number; y: number } => ({
-      x: chartX + ((sample.timestamp - firstSampleAt) / timeRange) * chartWidth,
-      y: chartY + chartHeight - ((sample.bpm - minChartBpm) / bpmRange) * chartHeight
-    })
-
-    context.fillStyle = '#07111f'
-    context.fillRect(0, 0, width, height)
-
-    const backgroundGradient = context.createLinearGradient(0, 0, width, height)
-    backgroundGradient.addColorStop(0, '#0f1f38')
-    backgroundGradient.addColorStop(0.52, '#111827')
-    backgroundGradient.addColorStop(1, '#18213a')
-    context.fillStyle = backgroundGradient
-    context.fillRect(0, 0, width, height)
-
-    context.fillStyle = 'rgba(56, 189, 248, 0.12)'
-    context.beginPath()
-    context.arc(180, 96, 180, 0, Math.PI * 2)
-    context.fill()
-    context.fillStyle = 'rgba(251, 113, 133, 0.1)'
-    context.beginPath()
-    context.arc(1040, 116, 220, 0, Math.PI * 2)
-    context.fill()
-
-    context.fillStyle = '#f8fafc'
-    context.font = '800 44px Segoe UI, Microsoft YaHei, sans-serif'
-    context.fillText('♥ HeartDock 心率记录', 72, 86)
-    context.font = '600 18px Segoe UI, Microsoft YaHei, sans-serif'
-    context.fillStyle = 'rgba(226, 232, 240, 0.76)'
-    context.fillText(`${HEART_RATE_REPORT_VERSION_LABEL} · ${formatDateTime(report.endedAt)} 导出`, 76, 122)
-    context.fillText('仅保留本次纯享记录，不写入历史。', 76, 646)
-
-    const cards = [
-      ['记录时长', formatDuration(report.durationMs)],
-      ['平均心率', `${report.averageBpm} bpm`],
-      ['最高心率', `${report.maxBpm} bpm`],
-      ['最低心率', `${report.minBpm} bpm`],
-      ['有效样本', `${report.sampleCount} 个`]
-    ]
-
-    cards.forEach(([label, value], index) => {
-      const cardX = 72 + index * 214
-      context.fillStyle = 'rgba(15, 23, 42, 0.62)'
-      context.strokeStyle = 'rgba(125, 211, 252, 0.22)'
-      context.lineWidth = 1
-      context.beginPath()
-      context.roundRect(cardX, 168, 184, 104, 22)
-      context.fill()
-      context.stroke()
-      context.fillStyle = 'rgba(203, 213, 225, 0.76)'
-      context.font = '600 18px Segoe UI, Microsoft YaHei, sans-serif'
-      context.fillText(label, cardX + 20, 205)
-      context.fillStyle = '#f8fafc'
-      context.font = '800 30px Segoe UI, Microsoft YaHei, sans-serif'
-      context.fillText(value, cardX + 20, 246)
-    })
-
-    context.fillStyle = 'rgba(2, 6, 23, 0.48)'
-    context.strokeStyle = 'rgba(125, 211, 252, 0.22)'
-    context.lineWidth = 1
-    context.beginPath()
-    context.roundRect(72, 312, 1056, 320, 26)
-    context.fill()
-    context.stroke()
-
-    for (let gridIndex = 0; gridIndex <= 4; gridIndex++) {
-      const y = chartY + (chartHeight / 4) * gridIndex
-      const labelBpm = Math.round(maxChartBpm - (bpmRange / 4) * gridIndex)
-
-      context.strokeStyle = 'rgba(148, 163, 184, 0.16)'
-      context.beginPath()
-      context.moveTo(chartX, y)
-      context.lineTo(chartX + chartWidth, y)
-      context.stroke()
-      context.fillStyle = 'rgba(203, 213, 225, 0.62)'
-      context.font = '600 14px Segoe UI, Microsoft YaHei, sans-serif'
-      context.fillText(`${labelBpm}`, 36, y + 5)
-    }
-
-    report.samples.forEach((sample, index) => {
-      if (index === 0) {
-        return
-      }
-
-      const previousPoint = getPoint(report.samples[index - 1])
-      const point = getPoint(sample)
-      context.strokeStyle = getColorForBpm(sample.bpm, configRef.current)
-      context.lineWidth = 4
-      context.lineCap = 'round'
-      context.beginPath()
-      context.moveTo(previousPoint.x, previousPoint.y)
-      context.lineTo(point.x, point.y)
-      context.stroke()
-    })
-
-    for (const sample of report.samples) {
-      const point = getPoint(sample)
-      context.fillStyle = sample.bpm === report.maxBpm || sample.bpm === report.minBpm ? '#f8fafc' : 'rgba(248, 250, 252, 0.34)'
-      context.beginPath()
-      context.arc(point.x, point.y, sample.bpm === report.maxBpm || sample.bpm === report.minBpm ? 6 : 3, 0, Math.PI * 2)
-      context.fill()
-    }
-
-    context.fillStyle = 'rgba(226, 232, 240, 0.78)'
-    context.font = '600 17px Segoe UI, Microsoft YaHei, sans-serif'
-    context.fillText(`最高：${report.maxBpm} bpm · ${formatDateTime(report.maxBpmAt)}`, 86, 688)
-    context.fillText(`最低：${report.minBpm} bpm · ${formatDateTime(report.minBpmAt)}`, 86, 718)
-
-    context.fillStyle = 'rgba(203, 213, 225, 0.72)'
-    context.font = '700 17px Segoe UI, Microsoft YaHei, sans-serif'
-    context.fillText('区间分布', 86, 762)
-
-    zoneSummary.forEach((zone, index) => {
-      const barX = 86 + index * 330
-      const barY = 784
-      context.fillStyle = 'rgba(15, 23, 42, 0.72)'
-      context.beginPath()
-      context.roundRect(barX, barY, 280, 18, 9)
-      context.fill()
-      context.fillStyle = zone.color
-      context.beginPath()
-      context.roundRect(barX, barY, Math.max(8, (zone.percent / 100) * 280), 18, 9)
-      context.fill()
-      context.fillStyle = 'rgba(226, 232, 240, 0.78)'
-      context.font = '600 15px Segoe UI, Microsoft YaHei, sans-serif'
-      context.fillText(`${zone.label} bpm · ${zone.percent}%`, barX, barY + 42)
-    })
-
-    context.fillStyle = 'rgba(148, 163, 184, 0.72)'
-    context.font = '600 15px Segoe UI, Microsoft YaHei, sans-serif'
-    context.fillText('github.com/HHS3188/heartdock', 76, 838)
-
-    return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
+  const handleConfirmResetConfig = (): void => {
+    handleResetConfig()
+    handleCloseResetConfigConfirm()
   }
 
   const handleExportHeartRateReportPng = async (): Promise<void> => {
@@ -2269,7 +3117,7 @@ function App() {
     setIsExportingHeartRateReport(true)
 
     try {
-      const contentBase64 = createHeartRateReportPngBase64(heartRateRecordReport)
+      const contentBase64 = createHeartRateReportPngBase64(heartRateRecordReport, configRef.current)
       const defaultFileName = `heartdock-heart-rate-${getTimestampFilePart(heartRateRecordReport.endedAt)}.png`
       const result = await window.heartdock.saveHeartRateReportPng(contentBase64, defaultFileName)
 
@@ -2302,11 +3150,36 @@ function App() {
       className={`app-shell appearance-${appearanceMode} ${isPureDisplay ? 'pure-display-shell' : ''} ${
         isClosing ? 'is-closing' : ''
       } ${isWindowResizing ? 'is-window-resizing' : ''} ${
+        isBootSplashVisible ? 'is-booting' : ''
+      } ${
         shouldShowFirstRunNotice ? 'is-first-run-notice' : ''
       } ${isFirstRunNoticeLeaving ? 'is-first-run-leaving' : ''} ${
+        isOnboardingActive ? 'is-onboarding-active' : ''
+      } ${
         config.clickThrough ? 'is-interaction-locked' : ''
       }`}
     >
+      {isBootSplashVisible && (
+        <div className="boot-heart-splash" aria-hidden="true">
+          <div className="boot-heart-logo">
+            <span>♥</span>
+            <strong>HeartDock</strong>
+            <small>桌面心率悬浮窗</small>
+          </div>
+        </div>
+      )}
+      {floatingHelpTooltip && (
+        <div
+          className={`floating-help-tooltip is-${floatingHelpTooltip.placement}`}
+          style={{
+            top: floatingHelpTooltip.top,
+            left: floatingHelpTooltip.left
+          }}
+          role="tooltip"
+        >
+          {floatingHelpTooltip.text}
+        </div>
+      )}
       {config.clickThrough && (
         <div
           className="interaction-lock-layer no-drag"
@@ -2371,6 +3244,165 @@ function App() {
           </div>
         </div>
       )}
+      {isResetConfigConfirmOpen && (
+        <div
+          className={`reset-confirm-modal no-drag ${
+            isResetConfigConfirmClosing ? 'is-leaving' : ''
+          }`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-config-title"
+        >
+          <div className="reset-confirm-panel">
+            <div className="scene-confirm-heading">
+              <span id="reset-config-title">重置显示设置</span>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="关闭重置确认"
+                title="关闭重置确认"
+                onClick={handleCloseResetConfigConfirm}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="scene-confirm-body reset-confirm-body">
+              <span className="scene-confirm-kicker">显示配置将恢复默认</span>
+              <strong>确定要重置所有显示设置吗？</strong>
+              <p>会恢复字号、颜色、显示样式、动态效果和窗口显示配置，并断开当前 BLE 连接。</p>
+            </div>
+
+            <div className="scene-confirm-actions">
+              <button className="reset-button" type="button" onClick={handleCloseResetConfigConfirm}>
+                取消
+              </button>
+              <button className="secondary-button" type="button" onClick={handleConfirmResetConfig}>
+                确认重置
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {shouldShowUpdateDialog && (
+        <div className="update-modal no-drag" role="dialog" aria-modal="true">
+          <section className={`update-panel ${isUpdateCheckStatusDialog ? 'is-check-status' : ''}`}>
+            <div className="update-heading">
+              <div>
+                <span>
+                  {isUpdateCheckStatusDialog
+                    ? '检查 HeartDock 更新'
+                    : updateSummary.isMajorUpdate
+                      ? '发现跨版本大更新'
+                      : '发现新版本'}
+                </span>
+                <strong>
+                  {updateSummary.currentVersion} →{' '}
+                  {hasActionableUpdate ? updateSummary.latestVersion || '新版本' : updateDialogLatestVersion}
+                </strong>
+              </div>
+              {(!updateSummary.isMajorUpdate || isUpdateCheckStatusDialog) && (
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="关闭更新窗口"
+                  title="关闭更新窗口"
+                  onClick={handleDismissUpdateDialog}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {isUpdateCheckStatusDialog ? (
+              <div className="update-version-box">
+                <span className="update-version-icon" aria-hidden="true">
+                  i
+                </span>
+                <div className="update-version-lines">
+                  <span>
+                    当前版本：<strong>{updateSummary.currentVersion}</strong>
+                  </span>
+                  <span>
+                    最新版本：<strong>{updateDialogLatestVersion}</strong>
+                    {updateSummary.status === 'checking' && <i className="update-spinner" aria-hidden="true" />}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="update-message">
+                {updateSummary.isMajorUpdate
+                  ? '该版本属于跨大版本更新，需要先更新后继续使用。'
+                  : '建议更新到最新版本，以获得稳定性修复和体验优化。'}
+              </p>
+            )}
+
+            {hasActionableUpdate && (
+              <ul className="update-notes">
+                {(updateSummary.releaseNotes.length > 0
+                  ? updateSummary.releaseNotes
+                  : ['包含稳定性修复和体验优化。']
+                ).map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
+
+            {(updateSummary.status === 'downloading' || updateSummary.status === 'downloaded') && (
+              <div className="update-progress" aria-label="更新下载进度">
+                <span style={{ width: `${Math.max(4, updateSummary.progressPercent)}%` }} />
+                <strong>{updateSummary.progressPercent}%</strong>
+              </div>
+            )}
+
+            {updateSummary.message && (
+              <p className={isUpdateCheckStatusDialog ? 'update-result-text' : 'update-status-text'}>
+                {updateSummary.message}
+              </p>
+            )}
+
+            <div className="update-actions">
+              {hasActionableUpdate && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => handleOpenExternalLink(updateSummary.releasePageUrl)}
+                >
+                  打开发布页
+                </button>
+              )}
+              {!updateSummary.isMajorUpdate && hasActionableUpdate && updateSummary.status === 'available' && (
+                <button className="reset-button" type="button" onClick={handleDismissUpdateDialog}>
+                  暂不更新
+                </button>
+              )}
+              {isUpdateCheckStatusDialog ? (
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={updateSummary.status === 'checking'}
+                  onClick={handleDismissUpdateDialog}
+                >
+                  确定
+                </button>
+              ) : updateSummary.status === 'downloaded' ? (
+                <button className="primary-button" type="button" onClick={handleInstallUpdate}>
+                  重启安装
+                </button>
+              ) : (
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={updateSummary.status === 'downloading'}
+                  onClick={() => void handleDownloadUpdate()}
+                >
+                  {updateSummary.status === 'downloading' ? '正在下载...' : '立即更新'}
+                </button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
       {(heartRateRecordReport || heartRateRecordNotice) && (
         <div
           className={`heart-rate-report-modal no-drag ${
@@ -2429,32 +3461,54 @@ function App() {
                       <polyline className="report-chart-grid-line" points="0,110 1000,110" />
                       <polyline className="report-chart-grid-line" points="0,165 1000,165" />
                       <polyline className="report-chart-line" points={heartRateReportChart.pathPoints} />
-                      <circle
-                        className="report-chart-max"
-                        cx={heartRateReportChart.maxPoint.x}
-                        cy={heartRateReportChart.maxPoint.y}
-                        r="8"
-                      />
-                      <circle
-                        className="report-chart-min"
-                        cx={heartRateReportChart.minPoint.x}
-                        cy={heartRateReportChart.minPoint.y}
-                        r="7"
-                      />
+                      {heartRateReportChart.markerPoints.map((point) => (
+                        <circle
+                          className={`report-chart-marker ${point.isMax ? 'is-max' : ''} ${
+                            point.isMin ? 'is-min' : ''
+                          }`}
+                          key={point.key}
+                          cx={point.x}
+                          cy={point.y}
+                          r={point.isMax || point.isMin ? 7 : 4}
+                        />
+                      ))}
                     </svg>
                   )}
                 </div>
 
-                <p className="report-meta">
-                  记录时间：{formatDateTime(heartRateRecordReport.startedAt)} - {formatDateTime(heartRateRecordReport.endedAt)}
-                </p>
-                <p className="report-meta">
-                  最高点：{formatDateTime(heartRateRecordReport.maxBpmAt)}；最低点：{formatDateTime(heartRateRecordReport.minBpmAt)}
-                </p>
-                <p className="report-meta">
-                  最高点位置：{getTimeOffsetLabel(heartRateRecordReport.startedAt, heartRateRecordReport.maxBpmAt)}；
-                  最低点位置：{getTimeOffsetLabel(heartRateRecordReport.startedAt, heartRateRecordReport.minBpmAt)}
-                </p>
+                {heartRateReportInsights && (
+                  <div className="report-insight-grid">
+                    <div className="report-insight-card is-trend">
+                      <span>趋势</span>
+                      <strong>{heartRateReportInsights.trendLabel}</strong>
+                      <small>{heartRateReportInsights.trendDetail}</small>
+                    </div>
+                    <div className="report-insight-card is-stability">
+                      <span>稳定度</span>
+                      <strong>{heartRateReportInsights.stabilityLabel}</strong>
+                      <small>{heartRateReportInsights.stabilityDetail}</small>
+                    </div>
+                    <div className="report-insight-card is-density">
+                      <span>采样</span>
+                      <strong>{heartRateReportInsights.densityLabel}</strong>
+                      <small>{heartRateReportInsights.densityDetail}</small>
+                    </div>
+                  </div>
+                )}
+
+                <div className="report-detail-grid">
+                  <p className="report-meta">
+                    <span>记录时间</span>
+                    <strong>
+                      {formatDateTime(heartRateRecordReport.startedAt)} -{' '}
+                      {formatDateTime(heartRateRecordReport.endedAt)}
+                    </strong>
+                  </p>
+                  <p className="report-meta">
+                    <span>峰值位置</span>
+                    <strong>{heartRateReportInsights?.peakDetail}</strong>
+                  </p>
+                </div>
 
                 <div className="report-zone-panel">
                   <span>区间分布</span>
@@ -2517,7 +3571,7 @@ function App() {
               onMouseLeave={() => {
                 const latestConfig = configRef.current
 
-                if (latestConfig.pureDisplay && !latestConfig.clickThrough) {
+                if (latestConfig.pureDisplay) {
                   void window.heartdock.setHitTestPassthrough(true)
                 }
               }}
@@ -2541,6 +3595,7 @@ function App() {
         </section>
       ) : (
         <section
+          ref={overlayCardRef}
           className="overlay-card"
           style={{
             backgroundColor: config.showSettings
@@ -2549,10 +3604,22 @@ function App() {
           }}
         >
           <div className="top-row">
-            <span className="badge brand-badge">
-              <span className="brand-mark">♥</span>
-              <span>HeartDock</span>
-            </span>
+            <div className="brand-cluster no-drag">
+              <span className="badge brand-badge">
+                <span className="brand-mark">♥</span>
+                <span>HeartDock</span>
+              </span>
+              <button
+                className="icon-button top-row-update-button"
+                type="button"
+                title="手动检查更新"
+                aria-label="手动检查更新"
+                disabled={isManualUpdateCheck}
+                onClick={() => void handleManualCheckForUpdates()}
+              >
+                ↻
+              </button>
+            </div>
 
             <div className="window-actions no-drag">
               <button
@@ -2601,8 +3668,11 @@ function App() {
 
           {config.showSettings && (
             <div className="settings-panel no-drag">
-              <div className="setting-field">
-                <span className="field-label">数据源</span>
+              <div className="setting-field" data-tour-id="tour-source">
+                <span className="field-label">
+                  数据源
+                  {renderHelpButton('选择心率数据来自模拟、手动输入还是标准 BLE 心率设备。')}
+                </span>
                 {renderCustomSelect(
                   'source-mode',
                   config.heartRateSourceMode,
@@ -2704,7 +3774,7 @@ function App() {
                 </div>
               )}
 
-              <div className="quick-options">
+              <div className="quick-options" data-tour-id="tour-pure">
                 <label className="option-card">
                   <input
                     type="checkbox"
@@ -2787,9 +3857,12 @@ function App() {
                 纯享模式下可以按住心率本体拖动位置，双击心率区域退出纯享模式。设置页面右下角的斜纹手柄可以拖动调整窗口大小。
               </p>
 
-              <div className="settings-section">
+              <div className="settings-section" data-tour-id="tour-display">
                 <div className="section-heading">
-                  <span>显示样式</span>
+                  <span>
+                    显示样式
+                    {renderHelpButton('这些设置会改变普通模式和纯享模式中的心率文字外观。')}
+                  </span>
                   <small>自定义心率前缀、单位、颜色和发光效果。</small>
                 </div>
 
@@ -2929,9 +4002,12 @@ function App() {
 
               </div>
 
-              <div className="settings-section">
+              <div className="settings-section" data-tour-id="tour-dynamic">
                 <div className="section-heading">
-                  <span>动态显示</span>
+                  <span>
+                    动态显示
+                    {renderHelpButton('控制心率变化时的动画和提醒效果，关闭可降低视觉干扰和性能开销。')}
+                  </span>
                   <small>控制心率数字更新、颜色过渡和提醒动画；动画会遵守系统减少动态效果设置。</small>
                 </div>
 
@@ -3016,9 +4092,12 @@ function App() {
                 </label>
               </div>
 
-              <div className="settings-section">
+              <div className="settings-section" data-tour-id="tour-recording">
                 <div className="section-heading">
-                  <span>纯享心率记录</span>
+                  <span>
+                    纯享心率记录
+                    {renderHelpButton('开启后只记录本次纯享会话，退出纯享时会打开独立报告窗口。')}
+                  </span>
                   <small>开启后，进入纯享模式开始记录，退出纯享时显示本次报告，不保存历史。</small>
                 </div>
 
@@ -3113,15 +4192,25 @@ function App() {
                 开启后，HeartDock 会拦截鼠标点击，不会操作 HeartDock，也不会点到底层窗口；需要再次操作时，请按 Ctrl + Shift + H 解锁。
               </p>
 
-              <div className="settings-section">
+              <div className="settings-section" data-tour-id="tour-tools">
                 <div className="section-heading">
-                  <span>配置文件</span>
-                  <small>导出当前显示和数据源设置，或载入之前保存的 JSON 配置文件。</small>
+                  <span>
+                    工具与维护
+                    {renderHelpButton('这里用于检查更新、导出诊断信息，以及备份或恢复配置。')}
+                  </span>
+                  <small>检查更新、导出诊断信息，或备份当前显示和数据源设置。</small>
                 </div>
 
                 <div className="config-file-actions">
                   <button
-                    className="secondary-button"
+                    className="secondary-button compact-tool-button"
+                    type="button"
+                    onClick={() => void handleExportDiagnostics()}
+                  >
+                    导出诊断信息
+                  </button>
+                  <button
+                    className="secondary-button compact-tool-button"
                     type="button"
                     onClick={() => void handleExportConfig()}
                   >
@@ -3129,7 +4218,7 @@ function App() {
                   </button>
 
                   <button
-                    className="secondary-button"
+                    className="secondary-button compact-tool-button"
                     type="button"
                     onClick={() => void handleImportConfig()}
                   >
@@ -3138,8 +4227,9 @@ function App() {
                 </div>
 
                 <p className="hint">
-                  载入配置时会自动关闭纯享模式和鼠标禁止交互，避免载入后误锁窗口；BLE 设备需要重新连接。
+                  载入配置时会自动关闭纯享模式和鼠标禁止交互；反馈问题时可以附带诊断信息文件。
                 </p>
+                {settingsNotice && <p className="settings-status-message">{settingsNotice}</p>}
               </div>
 
               <div className="project-links-panel">
@@ -3174,18 +4264,30 @@ function App() {
                   </button>
                 </div>
 
-                <button
-                  className="secondary-button first-run-reset-button"
-                  type="button"
-                  onClick={handleShowFirstRunNoticeAgain}
-                >
-                  重新查看首次启动说明
-                </button>
+                <div className="project-maintenance-actions">
+                  <button
+                    className="secondary-button first-run-reset-button"
+                    type="button"
+                    onClick={handleShowFirstRunNoticeAgain}
+                  >
+                    重新查看首次启动说明
+                  </button>
+                  <button
+                    className="secondary-button first-run-reset-button"
+                    type="button"
+                    onClick={handleShowOnboardingAgain}
+                  >
+                    重新打开新手引导
+                  </button>
+                  <button
+                    className="reset-button first-run-reset-button"
+                    type="button"
+                    onClick={handleOpenResetConfigConfirm}
+                  >
+                    重置显示设置
+                  </button>
+                </div>
               </div>
-
-              <button className="reset-button" type="button" onClick={handleResetConfig}>
-                重置显示设置
-              </button>
             </div>
           )}
           <button
@@ -3199,13 +4301,50 @@ function App() {
           </button>
         </section>
       )}
+      {isOnboardingActive && currentOnboardingStep && (
+        <div className="onboarding-layer no-drag" role="dialog" aria-modal="true">
+          {onboardingRect && (
+            <span
+              className="onboarding-target-ring"
+              style={{
+                top: onboardingRect.top - 8,
+                left: onboardingRect.left - 8,
+                width: onboardingRect.width + 16,
+                height: onboardingRect.height + 16
+              }}
+            />
+          )}
+          <section
+            className="onboarding-card"
+            style={
+              onboardingRect
+                ? {
+                    top: Math.min(window.innerHeight - 232, onboardingRect.top + onboardingRect.height + 16),
+                    left: Math.min(window.innerWidth - 360, Math.max(18, onboardingRect.left))
+                  }
+                : undefined
+            }
+          >
+            <span className="onboarding-step-count">
+              {onboardingStepIndex + 1} / {onboardingSteps.length}
+            </span>
+            <strong>{currentOnboardingStep.title}</strong>
+            <p>{currentOnboardingStep.body}</p>
+            <div className="onboarding-actions onboarding-actions-single">
+              <button className="primary-button onboarding-next-button" type="button" onClick={handleOnboardingNext}>
+                {onboardingStepIndex >= onboardingSteps.length - 1 ? '完成' : '下一步'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {shouldShowFirstRunNotice && (
         <div
           className={`first-run-notice-backdrop ${isFirstRunNoticeLeaving ? 'is-leaving' : ''}`}
           role="dialog"
           aria-modal="true"
         >
-          <section className="first-run-notice-card">
+          <section ref={firstRunNoticeCardRef} className="first-run-notice-card">
             <button
               className="first-run-close-button"
               type="button"
@@ -3264,23 +4403,46 @@ function App() {
 
               <p className="first-run-notice-hint">
                 {firstRunNoticeMode === 'required'
-                  ? `首次启动需要等待 ${FIRST_RUN_NOTICE_SECONDS} 秒后确认阅读。后续启动会先显示本页，你可以手动进入 HeartDock。`
-                  : '欢迎回来。源码和反馈入口会长期保留在设置页面中，点击下方按钮即可进入 HeartDock。'}
+                  ? `首次启动需要等待 ${FIRST_RUN_NOTICE_SECONDS} 秒后确认阅读。启动检查更新至少等待 ${STARTUP_UPDATE_GATE_SECONDS} 秒。`
+                  : '欢迎回来。HeartDock 会先完成启动更新检查，再允许进入主界面。'}
               </p>
+
+              <div className="startup-update-status">
+                <span>
+                  {startupGateSecondsLeft > 0
+                    ? `启动检查中，${startupGateSecondsLeft} 秒后可继续`
+                    : updateSummary.message || '启动检查已完成'}
+                </span>
+                <strong>
+                  {updateSummary.status === 'checking'
+                    ? '检查更新'
+                    : updateSummary.status === 'available'
+                      ? '有新版本'
+                      : updateSummary.status === 'downloaded'
+                        ? '已下载'
+                        : '可进入'}
+                </strong>
+              </div>
             </div>
 
             <div className="first-run-notice-actions">
               {firstRunNoticeMode === 'required' ? (
                 <>
-                  <label className={`notice-confirm-row ${firstRunNoticeSecondsLeft > 0 ? 'is-disabled' : ''}`}>
+                  <label
+                    className={`notice-confirm-row ${
+                      firstRunNoticeSecondsLeft > 0 || !canEnterFromStartup ? 'is-disabled' : ''
+                    }`}
+                  >
                     <input
                       type="checkbox"
-                      disabled={firstRunNoticeSecondsLeft > 0}
+                      disabled={firstRunNoticeSecondsLeft > 0 || !canEnterFromStartup}
                       checked={firstRunNoticeAccepted}
                       onChange={(event) => setFirstRunNoticeAccepted(event.target.checked)}
                     />
                     <span>
-                      {firstRunNoticeSecondsLeft > 0
+                      {!canEnterFromStartup
+                        ? '请等待启动更新检查完成'
+                        : firstRunNoticeSecondsLeft > 0
                         ? `请先阅读说明，${firstRunNoticeSecondsLeft} 秒后可确认`
                         : '我已详细阅读并理解以上说明'}
                     </span>
@@ -3289,7 +4451,7 @@ function App() {
                   <button
                     className="primary-button first-run-enter-button"
                     type="button"
-                    disabled={firstRunNoticeSecondsLeft > 0 || !firstRunNoticeAccepted}
+                    disabled={firstRunNoticeSecondsLeft > 0 || !firstRunNoticeAccepted || !canEnterFromStartup}
                     onClick={handleConfirmFirstRunNotice}
                   >
                     进入 HeartDock
@@ -3299,6 +4461,7 @@ function App() {
                 <button
                   className="primary-button first-run-enter-button"
                   type="button"
+                  disabled={!canEnterFromStartup}
                   onClick={handleConfirmFirstRunNotice}
                 >
                   进入 HeartDock
