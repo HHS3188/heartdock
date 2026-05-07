@@ -1,6 +1,6 @@
 {
   "name": "heartdock",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "description": "A customizable desktop heart rate overlay for Windows.",
   "author": "HHS3188",
   "license": "AGPL-3.0-only",
@@ -14,6 +14,7 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -31,6 +32,14 @@
   "build": {
     "appId": "dev.heartdock.app",
     "productName": "HeartDock",
+    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "HHS3188",
+        "repo": "heartdock"
+      }
+    ],
     "directories": {
       "output": "release"
     },

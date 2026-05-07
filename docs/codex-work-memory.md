@@ -312,3 +312,30 @@
 - 当前 git 状态：源码、版本号和文档待提交；`AGENTS.md` 仍为未跟踪本地上下文文件。
 - 风险 / 注意事项：BLE 仍为实验性；独占全屏、反作弊或受保护窗口可能限制置顶覆盖；纯享心率记录只保存本次会话报告，不保存历史。
 - 下一步建议：提交、推送、创建并合并 PR，然后创建 GitHub Release `v0.7.0` 并上传 `release\HeartDock Setup 0.7.0.exe`。
+
+### 2026-05-06 22:10 +08:00 - 接续 v0.9.0 正式候选计划并完成本地实现核对
+
+- 用户目标：上一轮 v0.9.0 计划执行到一半后卡住，新对话接续；先确认原来 `main` 状态和当前改动分支，再继续完成计划。
+- 当前分支 / HEAD：`codex/v0.9.0-release-candidate` / `eba573d`，本地 `main` 与 `origin/main` 均指向 v0.7.0 合并提交。
+- GitHub 状态：当前无 open PR；open issue 包含 `#63 feat: v0.9.0 正式候选体验、更新与诊断` 和 `#41 feat: 支持自定义心率背景图片`。
+- 当前改动文件：`package.json`、`package-lock.json`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/App.tsx`、`src/renderer/src/styles.css`、`src/renderer/src/vite-env.d.ts`、`README.md`、`CHANGELOG.md`、`docs/roadmap.md`、`docs/known-issues.md`、`docs/ai-handoff.md`、`docs/release-v0.9.0.md`、`docs/codex-work-memory.md`。
+- 已确认实现范围：
+  - `electron-updater` 和 GitHub publish 元数据已接入。
+  - 主进程新增更新 IPC、诊断导出 IPC、独立心率报告窗口、运行状态事件摘要和外链 allowlist。
+  - preload / 类型声明新增更新、诊断导出和报告窗口 API。
+  - 渲染层新增启动红心动画、启动更新 gate、更新弹窗、新手引导、帮助提示、手动检查更新、诊断导出、独立报告窗口视图和透明窗口局部 hit-test。
+  - 文档已从 v0.7.0 同步到 v0.9.0，并新增 `docs/release-v0.9.0.md`。
+- 已运行验证：
+  - `git diff --check`：通过。
+  - `npm run typecheck`：通过。
+  - `npm run build`：通过。
+  - `npm run dist`：通过，已生成 `release\HeartDock-Setup-0.9.0.exe`、`release\HeartDock-Setup-0.9.0.exe.blockmap` 和 `release\latest.yml`。
+  - 已修正打包产物文件名：`latest.yml` 的 `path` / `url` 与实际 exe 文件名一致，均为 `HeartDock-Setup-0.9.0.exe`。
+- 暂未执行：
+  - 未提交、未推送、未创建 PR、未发布 Release。
+  - 未做人工运行回归。
+- 重点风险 / 测试：
+  - 自动更新能力从安装 v0.9.0 后才对后续版本生效，旧版本仍需手动升级。
+  - 透明窗口 hit-test 受 Windows、多显示器、高 DPI、全屏程序和受保护窗口影响，必须重点人工实测。
+  - 独立报告窗口、诊断导出、启动 gate、更新弹窗和新手引导需要运行态验证。
+- 下一步建议：启动安装包或开发模式做人工回归，重点验证启动 gate、更新弹窗、引导层、透明窗口 hit-test、独立报告窗口和诊断导出。用户确认后再执行 commit / push / PR / Release。
